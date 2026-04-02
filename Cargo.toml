@@ -1,0 +1,38 @@
+[package]
+name = "ttfautohint-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[[bin]]
+name = "ttfautohint"
+path = "src/main.rs"
+
+[dependencies]
+write-fonts = { version = "0.46.0", git = "https://github.com/googlefonts/fontations", branch = "autohint-needs", features = [
+    "read",
+] }
+chrono = "0.4.44"
+clap = { version = "4.5", features = ["derive"] }
+libc = "0.2"
+log = "0.4"
+logos = "0.14"
+paste = "1.0.15"
+skrifa = { version = "0.41.0", git = "https://github.com/googlefonts/fontations", branch = "autohint-needs", features = [
+    "autohinter",
+] }
+thiserror = "2.0.18"
+[build-dependencies]
+pkg-config = "0.3"
+cbindgen = "0.27"
+
+[dev-dependencies]
+glob = "0.3.3"
+libtest-mimic = "0.8.2"
+similar = "2.7.0"
+
+[[test]]
+name = "integration_test"
+harness = false
