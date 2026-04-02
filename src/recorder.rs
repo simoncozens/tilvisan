@@ -59,7 +59,7 @@ fn compute_cvt_blue_offsets(font: &Font, sfnt_idx: usize, ta_style: usize) -> Op
     Some((cvt_blue_refs_offset, cvt_blue_shoots_offset))
 }
 
-fn get_glyph<'a>(font: &'a Font, sfnt_idx: usize, glyph_idx: GlyphId) -> Option<&'a ScaledGlyph> {
+fn get_glyph(font: &Font, sfnt_idx: usize, glyph_idx: GlyphId) -> Option<&ScaledGlyph> {
     // Bounds check and get GlyfData pointer.
     if sfnt_idx >= font.num_sfnts() || sfnt_idx >= font.glyf_ptrs_owned.len() {
         return None;
@@ -1831,7 +1831,8 @@ pub(crate) fn ta_rs_build_glyph_instructions(
                 first_indices.resize(num_active_segments, 0);
                 last_indices.resize(num_active_segments, 0);
 
-                if !recorder.fill_active_segment_point_indices(&mut first_indices, &mut last_indices)
+                if !recorder
+                    .fill_active_segment_point_indices(&mut first_indices, &mut last_indices)
                 {
                     return Err(AutohintError::NullPointer);
                 }

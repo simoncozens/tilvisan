@@ -187,12 +187,7 @@ pub(crate) fn build_prep_table(
 
         let blues_size = glyf_data.cvt_blues_size(i);
         let num_blues = if blues_size > 1 {
-            blues_size
-                - if font.windows_compatibility {
-                    2
-                } else {
-                    0
-                }
+            blues_size - if font.windows_compatibility { 2 } else { 0 }
         } else {
             0
         };

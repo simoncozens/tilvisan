@@ -1,6 +1,5 @@
-use core::ffi::{c_long, c_void};
+use core::ffi::c_long;
 use std::fmt::Write;
-use std::mem::size_of;
 
 extern crate libc;
 
@@ -869,7 +868,6 @@ pub(crate) fn ta_rs_handle_coverage(font: &mut Font, sfnt_idx: usize) -> Result<
         (sfnt.table_store_sfnt_idx, sfnt.glyph_count)
     };
 
-    let sample_glyphs;
     let (glyph_styles, sample_glyphs_local) = crate::globals::compute_style_coverage(
         &font.table_store,
         table_store_sfnt_idx,
@@ -879,7 +877,7 @@ pub(crate) fn ta_rs_handle_coverage(font: &mut Font, sfnt_idx: usize) -> Result<
         sfnt_idx as i32,
         num_sfnts as i32,
     )?;
-    sample_glyphs = sample_glyphs_local;
+    let sample_glyphs = sample_glyphs_local;
 
     {
         let sfnt = &mut font.sfnts_owned[sfnt_idx];
