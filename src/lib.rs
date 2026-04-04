@@ -16,7 +16,6 @@ mod head;
 mod info;
 mod intset;
 mod loader;
-mod logger;
 mod maxp;
 mod name;
 mod opcodes;

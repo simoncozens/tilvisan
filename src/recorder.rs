@@ -7,7 +7,6 @@ use crate::{
     font::Font,
     glyf::{extract_unscaled_outline, ScaledGlyph},
     loader::build_subglyph_shifter_bytecode,
-    logger::set_debug_logging,
     opcodes::{
         CvtLocations, FunctionNumbers, StorageAreaLocations, CALL, CVT_SCALING_VALUE_OFFSET, EIF,
         ELSE, IF, LT, MPPEM, NPUSHB, NPUSHW, PUSHB_1, PUSHB_2, PUSHW_1, WCVTP,
@@ -1563,7 +1562,6 @@ pub(crate) fn build_glyph_instructions(
     let mut sfnt_max_twilight_points = sfnt_ref.max_twilight_points;
     let mut sfnt_max_instructions = sfnt_ref.max_instructions;
 
-    set_debug_logging(font_ref.args.debug);
     if font_ref.args.debug {
         log_debug_heading(&format!("glyph {}", idx), '=');
     }

@@ -6,6 +6,7 @@ use ttfautohint_rs::{ttfautohint, InfoData, TtfautohintCall};
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     if args.ttfa_info {
         // TODO: Implement display_TTFA

@@ -7,7 +7,6 @@ use crate::{
     bytecode::Bytecode,
     error::AutohintError,
     font::Font,
-    logger::set_debug_logging,
     opcodes::{CvtLocations, ADD, PUSHB_2, PUSHB_3, RCVT, WCVTP},
 };
 use skrifa::{
@@ -930,7 +929,6 @@ pub(crate) fn adjust_coverage(font: &mut Font) {
 
     let glyph_styles = &data_ref.master_glyph_styles;
 
-    set_debug_logging(font.args.debug);
     if font.args.debug {
         log_unassigned_glyphs(glyph_styles, fallback_style as usize, 0, 1);
     }
