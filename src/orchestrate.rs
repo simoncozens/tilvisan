@@ -25,8 +25,6 @@ const STEM_MODE_MAX: i32 = 1;
 const HINTING_RANGE_MIN_MIN: u32 = 2;
 const INCREASE_X_HEIGHT_MIN: u32 = 6;
 const TA_STYLE_NONE_DFLT: i32 = 83;
-const TA_ERR_ALREADY_PROCESSED: i32 = 0xF5;
-const TA_ERR_MISSING_LEGAL_PERMISSION: i32 = 0x0F;
 
 fn ta_sfnt_build_glyph_instructions_cb(
     font: &mut TaFont,
@@ -53,7 +51,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     }
     for (i, sfnt_ref) in font.sfnts_owned.iter_mut().enumerate() {
         if sfnt_has_ttfautohint_glyph(&font.table_store, i)? {
-            return Err(AutohintError::UnportedError(TA_ERR_ALREADY_PROCESSED));
+            return Err(AutohintError::FontAlreadyProcessed);
         }
 
         let glyph_count = crate::maxp::num_glyphs_in_font_binary_at_index(&font.in_buf, i as u32)?;
@@ -80,9 +78,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
         let has_legal_permission =
             crate::maxp::sfnt_has_legal_permission(&font.table_store, sfnt_table_store_idx)?;
         if !has_legal_permission && !font.args.ignore_restrictions {
-            return Err(AutohintError::UnportedError(
-                TA_ERR_MISSING_LEGAL_PERMISSION,
-            ));
+            return Err(AutohintError::MissingLegalPermission);
         }
 
         if dehint {

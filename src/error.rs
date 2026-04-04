@@ -38,4 +38,8 @@ pub enum AutohintError {
     },
     #[error("Control file validation error at entry {entry_index}: {message}")]
     ControlFileValidationError { entry_index: usize, message: String },
+    #[error("Missing legal permission to autohint this font")]
+    MissingLegalPermission,
+    #[error("Font has already been processed")]
+    FontAlreadyProcessed,
 }
