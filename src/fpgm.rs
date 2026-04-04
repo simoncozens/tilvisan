@@ -5948,13 +5948,12 @@ fn build_fpgm(
 
 pub(crate) fn build_fpgm_table(
     tablestore: &mut TableStore,
-    sfnt_index: usize,
     glyf_data: &GlyfData,
     increase_x_height: u32,
     has_control_data: bool,
     font_fallback_style: usize,
 ) -> Result<usize, AutohintError> {
-    if tablestore.get_processed(sfnt_index, Tag::new(b"glyf")) {
+    if tablestore.get_processed(Tag::new(b"glyf")) {
         return Ok(0);
     }
 
@@ -5966,7 +5965,7 @@ pub(crate) fn build_fpgm_table(
     );
     let out: Vec<u8> = bytecode.as_slice().to_vec();
     let fpgm_len = out.len();
-    tablestore.update_table(sfnt_index, Tag::new(b"fpgm"), &out);
+    tablestore.update_table(Tag::new(b"fpgm"), &out);
 
     Ok(fpgm_len)
 }

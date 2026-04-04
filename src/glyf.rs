@@ -26,7 +26,6 @@ use write_fonts::{
     },
 };
 pub const TA_STYLE_MAX: usize = 84;
-const FT_ERR_INVALID_TABLE: u32 = 0x23;
 const TA_STYLE_MASK: u16 = 0x3FFF;
 const TA_STYLE_UNASSIGNED: u16 = TA_STYLE_MASK;
 
@@ -137,20 +136,7 @@ fn log_unassigned_glyphs(
     log::debug!("{message}");
 }
 
-fn build_glyf_data_common(
-    font: &mut Font,
-    sfnt_idx: usize,
-    use_scaler: u8,
-) -> Result<(), AutohintError> {
-    // Bounds check and get sfnt metadata.
-    if sfnt_idx >= font.num_sfnts() {
-        return Err(AutohintError::UnportedError(FT_ERR_INVALID_TABLE as i32));
-    }
-
-    if sfnt_idx < font.glyf_ptrs_owned.len() && font.glyf_ptrs_owned[sfnt_idx].is_some() {
-        return Ok(());
-    }
-
+fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), AutohintError> {
     let mut data = GlyfData {
         num_glyphs: 0,
         glyphs: Vec::new(),
@@ -165,14 +151,10 @@ fn build_glyf_data_common(
         cvt_blue_adjustment_offsets: [0; TA_STYLE_MAX],
     };
 
-    let (table_store_sfnt_idx, sfnt_max_components) = {
-        let sfnt_ref = &font.sfnts_owned[sfnt_idx];
-        (sfnt_ref.table_store_sfnt_idx, sfnt_ref.max_components)
-    };
+    let sfnt_max_components = font.sfnt.max_components;
 
     let build_result = match build_glyphs_rs(
         &mut font.table_store,
-        table_store_sfnt_idx,
         use_scaler,
         font.args.composites,
         sfnt_max_components,
@@ -185,14 +167,14 @@ fn build_glyf_data_common(
     data.num_glyphs = build_result.num_glyphs;
 
     if font.args.composites && sfnt_max_components != 0 {
-        let sfnt_ref = &mut font.sfnts_owned[sfnt_idx];
+        let sfnt_ref = &mut font.sfnt;
         sfnt_ref.max_components += 1;
         sfnt_ref.max_composite_points = build_result.max_composite_points;
         sfnt_ref.max_composite_contours = build_result.max_composite_contours;
     }
 
-    if sfnt_idx < font.glyf_ptrs_owned.len() {
-        font.glyf_ptrs_owned[sfnt_idx] = Some(data);
+    if font.glyf_ptr_owned.is_none() {
+        font.glyf_ptr_owned = Some(data);
     }
 
     Ok(())
@@ -268,10 +250,9 @@ type OutlinePayload = (Vec<TaRsOutlinePoint>, Vec<u8>, Vec<u16>);
 
 pub(crate) fn extract_unscaled_outline(
     tablestore: &TableStore,
-    sfnt_index: usize,
     glyph_id: GlyphId,
 ) -> Result<Option<OutlinePayload>, ReadError> {
-    let ttf_bytes = tablestore.build_ttf(sfnt_index as u32);
+    let ttf_bytes = tablestore.build_ttf();
     let font = skrifa::FontRef::new(&ttf_bytes).map_err(|_| ReadError::ValidationError)?;
     let outlines = font.outline_glyphs();
     let upem = font.head()?.units_per_em() as f32;
@@ -497,11 +478,8 @@ fn compute_composite_pointsums(
 
 // ── split_glyphs (TA_sfnt_split_glyf_table Rust half) ───────────────────────
 
-fn split_glyphs(
-    tablestore: &mut TableStore,
-    sfnt_index: usize,
-) -> Result<Vec<ScaledGlyph>, AutohintError> {
-    let ttf_bytes = tablestore.build_ttf(sfnt_index as u32);
+fn split_glyphs(tablestore: &mut TableStore) -> Result<Vec<ScaledGlyph>, AutohintError> {
+    let ttf_bytes = tablestore.build_ttf();
     let font = skrifa::FontRef::new(&ttf_bytes)?;
     let glyf = font.glyf()?;
     let maxp_table = font.maxp()?;
@@ -519,11 +497,8 @@ fn split_glyphs(
 
 // ── run_font_through_scaler (TA_sfnt_create_glyf_data Rust half) ─────────────
 
-fn run_font_through_scaler(
-    tablestore: &mut TableStore,
-    sfnt_index: usize,
-) -> Result<Vec<ScaledGlyph>, AutohintError> {
-    let ttf_bytes = tablestore.build_ttf(sfnt_index as u32);
+fn run_font_through_scaler(tablestore: &mut TableStore) -> Result<Vec<ScaledGlyph>, AutohintError> {
+    let ttf_bytes = tablestore.build_ttf();
     let font = skrifa::FontRef::new(&ttf_bytes)?;
     let head_table = font.head()?;
     let maxp_table = font.maxp()?;
@@ -581,7 +556,6 @@ fn run_font_through_scaler(
 
 fn update_glyf_loca_tables(
     tablestore: &mut TableStore,
-    sfnt_index: usize,
     glyphs: &[ScaledGlyph],
 ) -> Result<(), ReadError> {
     fn staged_instruction_bytes(glyph: &ScaledGlyph) -> Result<Option<Vec<u8>>, ReadError> {
@@ -718,7 +692,7 @@ fn update_glyf_loca_tables(
         }
     }
 
-    if tablestore.get_processed(sfnt_index, Tag::new(b"glyf")) {
+    if tablestore.get_processed(Tag::new(b"glyf")) {
         return Ok(());
     }
     let mut builder = GlyfLocaBuilder::new();
@@ -730,23 +704,20 @@ fn update_glyf_loca_tables(
     }
     let (glyf_data, loca_data, loca_format) = builder.build();
     tablestore.update_table(
-        sfnt_index,
         Tag::new(b"glyf"),
         &dump_table(&glyf_data).map_err(|_| ReadError::ValidationError)?,
     );
     tablestore.update_table(
-        sfnt_index,
         Tag::new(b"loca"),
         &dump_table(&loca_data).map_err(|_| ReadError::ValidationError)?,
     );
-    tablestore.set_processed(sfnt_index, Tag::new(b"glyf"), true);
-    tablestore.set_processed(sfnt_index, Tag::new(b"loca"), true);
-    if let Some(head) = tablestore.clone_table(sfnt_index, Tag::new(b"head")) {
+    tablestore.set_processed(Tag::new(b"glyf"), true);
+    tablestore.set_processed(Tag::new(b"loca"), true);
+    if let Some(head) = tablestore.clone_table(Tag::new(b"head")) {
         let read_head = write_fonts::read::tables::head::Head::read(FontData::new(&head))?;
         let mut write_head: Head = read_head.to_owned_table();
         write_head.index_to_loc_format = loca_format as i16;
         tablestore.update_table(
-            sfnt_index,
             Tag::new(b"head"),
             &dump_table(&write_head).map_err(|_| ReadError::ValidationError)?,
         );
@@ -780,15 +751,14 @@ fn add_ttfautohint_glyph(glyphs: &mut Vec<ScaledGlyph>) {
 
 fn build_glyphs_rs(
     table_store: &mut TableStore,
-    sfnt_idx: usize,
     use_scaler: u8,
     hint_composites: bool,
     max_components: u16,
 ) -> Result<TaRsBuiltGlyphs, u32> {
     let result = if use_scaler != 0 {
-        run_font_through_scaler(table_store, sfnt_idx)
+        run_font_through_scaler(table_store)
     } else {
-        split_glyphs(table_store, sfnt_idx)
+        split_glyphs(table_store)
     };
 
     let mut glyphs = match result {
@@ -818,7 +788,6 @@ fn build_glyphs_rs(
 
 pub(crate) fn compute_hint_plan_rs(
     table_store: &TableStore,
-    sfnt_idx: usize,
     glyph_id: GlyphId,
     ta_style: usize,
     is_non_base: u8,
@@ -829,7 +798,7 @@ pub(crate) fn compute_hint_plan_rs(
         return Err(AutohintError::UnportedError(0x23));
     };
 
-    let ttf_bytes = table_store.build_ttf(sfnt_idx as u32);
+    let ttf_bytes = table_store.build_ttf();
     let font = skrifa::FontRef::new(&ttf_bytes)?;
 
     let Some(plan) = compute_hint_plan_exported(
@@ -849,55 +818,39 @@ pub(crate) fn compute_hint_plan_rs(
 
 // ── Serialization: glyf/loca table building ──────────────────────────────────
 
-pub(crate) fn split_glyf_table(
-    font: &mut Font,
-    sfnt_idx: usize,
-) -> Result<(), AutohintError> {
-    build_glyf_data_common(font, sfnt_idx, 0)
+pub(crate) fn split_glyf_table(font: &mut Font) -> Result<(), AutohintError> {
+    build_glyf_data_common(font, 0)
 }
 
-pub(crate) fn create_glyf_data(
-    font: &mut Font,
-    sfnt_idx: usize,
-) -> Result<(), AutohintError> {
-    build_glyf_data_common(font, sfnt_idx, 1)
+pub(crate) fn create_glyf_data(font: &mut Font) -> Result<(), AutohintError> {
+    build_glyf_data_common(font, 1)
 }
 
-pub(crate) fn handle_coverage(font: &mut Font, sfnt_idx: usize) -> Result<(), AutohintError> {
-    let num_sfnts = font.num_sfnts();
-    if sfnt_idx >= num_sfnts || sfnt_idx >= font.glyf_ptrs_owned.len() {
-        return Err(AutohintError::InvalidTable);
-    }
-
-    let (table_store_sfnt_idx, glyph_count) = {
-        let sfnt = &font.sfnts_owned[sfnt_idx];
-        (sfnt.table_store_sfnt_idx, sfnt.glyph_count)
-    };
+pub(crate) fn handle_coverage(font: &mut Font) -> Result<(), AutohintError> {
+    let glyph_count = font.sfnt.glyph_count;
 
     let (glyph_styles, sample_glyphs_local) = crate::globals::compute_style_coverage(
         &font.table_store,
-        table_store_sfnt_idx,
         glyph_count as usize,
         TA_STYLE_UNASSIGNED,
         font.args.debug,
-        sfnt_idx as i32,
-        num_sfnts as i32,
+        0,
+        1,
     )?;
     let sample_glyphs = sample_glyphs_local;
 
     {
-        let sfnt = &mut font.sfnts_owned[sfnt_idx];
+        let sfnt = &mut font.sfnt;
         sfnt.glyph_styles = glyph_styles;
         sfnt.sample_glyphs = *sample_glyphs.as_array().unwrap();
     }
 
     let data = font
-        .glyf_ptrs_owned
-        .get_mut(sfnt_idx)
-        .and_then(Option::as_mut)
+        .glyf_ptr_owned
+        .as_mut()
         .ok_or(AutohintError::InvalidTable)?;
 
-    let current_styles = &font.sfnts_owned[sfnt_idx].glyph_styles;
+    let current_styles = &font.sfnt.glyph_styles;
 
     if data.master_glyph_styles.is_empty() {
         data.master_glyph_styles = current_styles.clone();
@@ -918,26 +871,19 @@ pub(crate) fn build_glyf_table(
     sfnt_idx: usize,
     build_glyph_instructions: TaRsBuildGlyphInstructions,
 ) -> Result<(), AutohintError> {
-    if sfnt_idx >= font.num_sfnts() {
-        return Err(AutohintError::InvalidTable);
-    }
-    if sfnt_idx >= font.num_sfnts() || sfnt_idx >= font.glyf_ptrs_owned.len() {
+    if font.glyf_ptr_owned.is_none() {
         return Err(AutohintError::InvalidTable);
     }
 
     let data_num_glyphs = font
-        .glyf_ptrs_owned
-        .get(sfnt_idx)
-        .and_then(Option::as_ref)
+        .glyf_ptr_owned
+        .as_ref()
         .map(|d| d.num_glyphs)
         .ok_or(AutohintError::InvalidTable)?;
-    let (table_store_sfnt_idx, sfnt_max_components) = {
-        let sfnt_ref = &font.sfnts_owned[sfnt_idx];
-        (sfnt_ref.table_store_sfnt_idx, sfnt_ref.max_components)
-    };
+    let sfnt_max_components = font.sfnt.max_components;
     let table_store = &font.table_store;
 
-    if table_store.get_processed(table_store_sfnt_idx, Tag::new(b"glyf")) {
+    if table_store.get_processed(Tag::new(b"glyf")) {
         return Ok(());
     }
 
@@ -959,7 +905,7 @@ pub(crate) fn build_glyf_table(
                     GlyphId::new(idx),
                     GlyphId::new(loop_count),
                     sfnt_idx as c_long,
-                    font.num_sfnts(),
+                    1,
                 );
                 if ret != 0 {
                     return Err(AutohintError::ProgressCancelled);
@@ -970,30 +916,23 @@ pub(crate) fn build_glyf_table(
 
     let table_store = &mut font.table_store;
     let glyphs = &font
-        .glyf_ptrs_owned
-        .get(sfnt_idx)
-        .and_then(Option::as_ref)
+        .glyf_ptr_owned
+        .as_ref()
         .ok_or(AutohintError::InvalidTable)?
         .glyphs;
-    update_glyf_loca_tables(table_store, table_store_sfnt_idx, glyphs)?;
+    update_glyf_loca_tables(table_store, glyphs)?;
     Ok(())
 }
 
-pub(crate) fn adjust_coverage(font: &mut Font, sfnt_idx: usize) {
-    let num_sfnts = font.num_sfnts();
-    if sfnt_idx >= num_sfnts || sfnt_idx >= font.glyf_ptrs_owned.len() {
+pub(crate) fn adjust_coverage(font: &mut Font) {
+    if font.glyf_ptr_owned.is_none() {
         return;
     }
 
     let fallback_style = fallback_style(font);
 
-    let data_ref = match font
-        .glyf_ptrs_owned
-        .get_mut(sfnt_idx)
-        .and_then(Option::as_mut)
-    {
-        Some(data_ref) => data_ref,
-        None => return,
+    let Some(data_ref) = font.glyf_ptr_owned.as_mut() else {
+        return;
     };
     if data_ref.adjusted != 0 || data_ref.master_glyph_styles.is_empty() {
         return;
@@ -1003,12 +942,7 @@ pub(crate) fn adjust_coverage(font: &mut Font, sfnt_idx: usize) {
 
     set_debug_logging(font.args.debug);
     if font.args.debug {
-        log_unassigned_glyphs(
-            glyph_styles,
-            fallback_style as usize,
-            sfnt_idx,
-            num_sfnts,
-        );
+        log_unassigned_glyphs(glyph_styles, fallback_style as usize, 0, 1);
     }
 
     for style_bits in data_ref.master_glyph_styles.iter_mut() {
@@ -1018,7 +952,7 @@ pub(crate) fn adjust_coverage(font: &mut Font, sfnt_idx: usize) {
         }
     }
 
-    let sfnt_ref = &mut font.sfnts_owned[sfnt_idx];
+    let sfnt_ref = &mut font.sfnt;
     sfnt_ref
         .glyph_styles
         .clone_from(&data_ref.master_glyph_styles);

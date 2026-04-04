@@ -100,11 +100,10 @@ fn build_number_set(number_set: &IntSet) -> (Bytecode, usize) {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_prep_table(
     font: &mut Font,
-    sfnt_index: usize,
     glyf_data: &GlyfData,
 ) -> Result<usize, AutohintError> {
     let tablestore = &mut font.table_store;
-    if tablestore.get_processed(sfnt_index, Tag::new(b"glyf")) {
+    if tablestore.get_processed(Tag::new(b"glyf")) {
         return Err(AutohintError::TableAlreadyProcessed);
     }
 
@@ -303,7 +302,7 @@ pub(crate) fn build_prep_table(
     bytecode.extend(PREP_set_default_cvs_values);
 
     let out: Vec<u8> = bytecode.as_slice().to_vec();
-    tablestore.update_table(sfnt_index, Tag::new(b"prep"), &out);
+    tablestore.update_table(Tag::new(b"prep"), &out);
     Ok(num_stack_elements.unwrap_or(0))
 }
 

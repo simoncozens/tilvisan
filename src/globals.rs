@@ -117,7 +117,6 @@ pub(crate) fn ta_style_to_skrifa_style(ta_style: usize) -> Option<usize> {
 
 pub(crate) fn compute_style_coverage(
     table_store: &TableStore,
-    sfnt_idx: usize,
     glyph_count: usize,
     fallback_style: u16,
     debug_dump: bool,
@@ -198,7 +197,7 @@ pub(crate) fn compute_style_coverage(
         }
     }
 
-    let ttf_bytes = table_store.build_ttf(sfnt_idx as u32);
+    let ttf_bytes = table_store.build_ttf();
     let font = FontRef::new(&ttf_bytes)?;
     let outlines = font.outline_glyphs();
     let styles = GlyphStyles::new(&outlines);

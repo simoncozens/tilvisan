@@ -26,20 +26,13 @@ const TA_DIGIT: u16 = 0x8000;
 const TA_STYLE_NONE_DFLT: usize = 83;
 const TA_DIR_NONE: i32 = 4;
 
-fn compute_cvt_blue_offsets(font: &Font, sfnt_idx: usize, ta_style: usize) -> Option<(u16, u16)> {
+fn compute_cvt_blue_offsets(font: &Font, ta_style: usize) -> Option<(u16, u16)> {
     if ta_style >= TA_STYLE_MAX {
         return None;
     }
 
     // Bounds check and get GlyfData pointer.
-    if sfnt_idx >= font.num_sfnts() || sfnt_idx >= font.glyf_ptrs_owned.len() {
-        return None;
-    }
-
-    let glyf_data = font
-        .glyf_ptrs_owned
-        .get(sfnt_idx)
-        .and_then(Option::as_ref)?;
+    let glyf_data = font.glyf_ptr_owned.as_ref()?;
 
     let base = (CvtLocations::cvtl_max_runtime as u32)
         .checked_add(3u32.checked_mul(glyf_data.num_used_styles)?)?
@@ -62,28 +55,18 @@ fn compute_cvt_blue_offsets(font: &Font, sfnt_idx: usize, ta_style: usize) -> Op
 
 fn get_glyph(font: &Font, sfnt_idx: usize, glyph_idx: GlyphId) -> Option<&ScaledGlyph> {
     // Bounds check and get GlyfData pointer.
-    if sfnt_idx >= font.num_sfnts() || sfnt_idx >= font.glyf_ptrs_owned.len() {
+    if font.glyf_ptr_owned.is_none() {
         return None;
     }
 
-    let glyf_data = font
-        .glyf_ptrs_owned
-        .get(sfnt_idx)
-        .and_then(Option::as_ref)?;
+    let glyf_data = font.glyf_ptr_owned.as_ref()?;
     glyf_data.glyphs.get(glyph_idx.to_u32() as usize)
 }
 
 fn put_glyph(font: &mut Font, sfnt_idx: usize, glyph_idx: GlyphId, glyph: ScaledGlyph) {
     // Bounds check and get GlyfData pointer.
-    if sfnt_idx >= font.num_sfnts() || sfnt_idx >= font.glyf_ptrs_owned.len() {
-        return;
-    }
 
-    let Some(glyf_data) = font
-        .glyf_ptrs_owned
-        .get_mut(sfnt_idx)
-        .and_then(Option::as_mut)
-    else {
+    let Some(glyf_data) = font.glyf_ptr_owned.as_mut() else {
         return;
     };
     if let Some(slot) = glyf_data.glyphs.get_mut(glyph_idx.to_u32() as usize) {
@@ -1194,8 +1177,6 @@ fn recorder_replay_process_hint_record(
 fn recorder_record_hints_for_ppem(
     recorder: &mut RustRecorder,
     font: &Font,
-    sfnt_idx: usize,
-    table_store_sfnt_idx: usize,
     glyph_idx: GlyphId,
     glyph_num_points: u32,
     ppem: u16,
@@ -1212,7 +1193,6 @@ fn recorder_record_hints_for_ppem(
 
     let rust_plan = crate::glyf::compute_hint_plan_rs(
         &font.table_store,
-        table_store_sfnt_idx,
         glyph_idx,
         ta_style,
         is_non_base as u8,
@@ -1225,7 +1205,7 @@ fn recorder_record_hints_for_ppem(
     }
 
     let Some((cvt_blue_refs_offset, cvt_blue_shoots_offset)) =
-        compute_cvt_blue_offsets(font, sfnt_idx, ta_style)
+        compute_cvt_blue_offsets(font, ta_style)
     else {
         return Err(AutohintError::NullPointer);
     };
@@ -1557,14 +1537,13 @@ pub(crate) fn build_glyph_instructions(
     let font_ref = font;
 
     // Bounds check and get sfnt/GlyfData pointers.
-    if sfnt_idx >= font_ref.num_sfnts() || sfnt_idx >= font_ref.glyf_ptrs_owned.len() {
+    if font_ref.glyf_ptr_owned.is_none() {
         return Err(AutohintError::NullPointer);
     }
 
     let (glyf_num_glyphs, glyf_style_ids) = font_ref
-        .glyf_ptrs_owned
-        .get(sfnt_idx)
-        .and_then(Option::as_ref)
+        .glyf_ptr_owned
+        .as_ref()
         .map(|g| (g.num_glyphs, g.style_ids))
         .ok_or(AutohintError::NullPointer)?;
 
@@ -1572,13 +1551,12 @@ pub(crate) fn build_glyph_instructions(
         .ok_or(AutohintError::NullPointer)?
         .clone();
 
-    let sfnt_ref = &font_ref.sfnts_owned[sfnt_idx];
+    let sfnt_ref = &font_ref.sfnt;
     let idx_usize = idx.to_u32() as usize;
     if idx_usize >= sfnt_ref.glyph_styles.len() || idx.to_u32() >= glyf_num_glyphs as u32 {
         return Err(AutohintError::NullPointer);
     }
 
-    let sfnt_table_store_sfnt_idx = sfnt_ref.table_store_sfnt_idx;
     let gstyle = sfnt_ref.glyph_styles[idx_usize];
     let fallback_style = crate::orchestrate::fallback_style_for_script(
         crate::orchestrate::script_to_index(&font_ref.args.fallback_script),
@@ -1600,14 +1578,10 @@ pub(crate) fn build_glyph_instructions(
     let mut is_empty_glyph = !is_composite_glyph && glyph_ref.num_contours() == 0;
     let mut glyph_num_points = glyph_ref.num_points() as u32;
 
-    if sfnt_table_store_sfnt_idx != MISSING {
-        if let Ok(info) =
-            crate::loader::load_glyph_info(&font_ref.table_store, sfnt_table_store_sfnt_idx, idx)
-        {
-            is_composite_glyph = info.kind == 2;
-            is_empty_glyph = info.kind == 0;
-            glyph_num_points = info.num_points as u32;
-        }
+    if let Ok(info) = crate::loader::load_glyph_info(&font_ref.table_store, idx) {
+        is_composite_glyph = info.kind == 2;
+        is_empty_glyph = info.kind == 0;
+        glyph_num_points = info.num_points as u32;
     }
 
     if is_empty_glyph {
@@ -1617,17 +1591,11 @@ pub(crate) fn build_glyph_instructions(
     let mut bytecode = Bytecode::new();
 
     if is_composite_glyph {
-        if sfnt_table_store_sfnt_idx != MISSING {
-            let subglyph = match build_subglyph_shifter_bytecode(
-                &font_ref.table_store,
-                sfnt_table_store_sfnt_idx,
-                idx,
-            ) {
-                Ok(v) => v,
-                Err(status) => return Err(AutohintError::UnportedError(status as i32)),
-            };
-            bytecode.extend(subglyph);
-        }
+        let subglyph = match build_subglyph_shifter_bytecode(&font_ref.table_store, idx) {
+            Ok(v) => v,
+            Err(status) => return Err(AutohintError::UnportedError(status as i32)),
+        };
+        bytecode.extend(subglyph);
         use_gstyle_data = false;
     } else if font_ref.args.fallback_scaling {
         if ta_style == TA_STYLE_NONE_DFLT {
@@ -1637,7 +1605,6 @@ pub(crate) fn build_glyph_instructions(
             let (emitted, num_args) = build_glyph_scaler_bytecode(
                 &recorder,
                 &font_ref.table_store,
-                sfnt_table_store_sfnt_idx,
                 idx,
                 font_ref.args.composites,
             )?;
@@ -1669,8 +1636,6 @@ pub(crate) fn build_glyph_instructions(
                 recorder_record_hints_for_ppem(
                     &mut recorder,
                     font_ref,
-                    sfnt_idx,
-                    sfnt_table_store_sfnt_idx,
                     idx,
                     glyph_num_points,
                     size as u16,
@@ -1703,7 +1668,6 @@ pub(crate) fn build_glyph_instructions(
                 let (emitted, num_args) = build_glyph_scaler_bytecode(
                     &recorder,
                     &font_ref.table_store,
-                    sfnt_table_store_sfnt_idx,
                     idx,
                     font_ref.args.composites,
                 )?;
@@ -1774,7 +1738,6 @@ pub(crate) fn build_glyph_instructions(
                 let segment_result = build_glyph_segments_bytecode(
                     &recorder,
                     &font_ref.table_store,
-                    sfnt_table_store_sfnt_idx,
                     idx,
                     font_ref.args.composites,
                     style_id,
@@ -1823,8 +1786,6 @@ pub(crate) fn build_glyph_instructions(
             recorder_record_hints_for_ppem(
                 &mut recorder,
                 font_ref,
-                sfnt_idx,
-                sfnt_table_store_sfnt_idx,
                 idx,
                 glyph_num_points,
                 size as u16,
@@ -1857,7 +1818,6 @@ pub(crate) fn build_glyph_instructions(
             let (emitted, num_args) = build_glyph_scaler_bytecode(
                 &recorder,
                 &font_ref.table_store,
-                sfnt_table_store_sfnt_idx,
                 idx,
                 font_ref.args.composites,
             )?;
@@ -1927,7 +1887,6 @@ pub(crate) fn build_glyph_instructions(
             let segment_result = build_glyph_segments_bytecode(
                 &recorder,
                 &font_ref.table_store,
-                sfnt_table_store_sfnt_idx,
                 idx,
                 font_ref.args.composites,
                 style_id,
@@ -1989,7 +1948,7 @@ pub(crate) fn build_glyph_instructions(
     }
 
     {
-        let sfnt_mut = &mut font_ref.sfnts_owned[sfnt_idx];
+        let sfnt_mut = &mut font_ref.sfnt;
         sfnt_mut.max_storage = sfnt_max_storage;
         sfnt_mut.max_stack_elements = sfnt_max_stack_elements;
         sfnt_mut.max_twilight_points = sfnt_max_twilight_points;
@@ -2011,11 +1970,10 @@ pub(crate) fn build_glyph_instructions(
 fn build_glyph_scaler_bytecode(
     recorder: &RustRecorder,
     table_store: &TableStore,
-    sfnt_idx: usize,
     glyph_id: GlyphId,
     hint_composites: bool,
 ) -> Result<(Bytecode, usize), AutohintError> {
-    let outline = match extract_unscaled_outline(table_store, sfnt_idx, glyph_id) {
+    let outline = match extract_unscaled_outline(table_store, glyph_id) {
         Ok(v) => v,
         Err(_) => return Err(AutohintError::NullPointer),
     };
@@ -2103,7 +2061,6 @@ fn build_glyph_scaler_bytecode(
 fn build_glyph_segments_bytecode(
     recorder: &RustRecorder,
     table_store: &crate::tablestore::TableStore,
-    sfnt_idx: usize,
     glyph_id: GlyphId,
     hint_composites: bool,
     style_id: u32,
@@ -2120,7 +2077,7 @@ fn build_glyph_segments_bytecode(
     let first = first_indices;
     let last = last_indices;
 
-    let outline = match extract_unscaled_outline(table_store, sfnt_idx, glyph_id) {
+    let outline = match extract_unscaled_outline(table_store, glyph_id) {
         Ok(v) => v,
         Err(_) => return Err(AutohintError::InvalidTable),
     };

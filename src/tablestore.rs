@@ -31,10 +31,6 @@ impl TableEntry {
 
 #[derive(Debug, Default)]
 pub struct TableStore {
-    sfnts: Vec<SFNT>, // Per-SFNT table_infos
-}
-#[derive(Debug, Default)]
-pub struct SFNT {
     tables: BTreeMap<Tag, TableEntry>, // tag → raw bytes + processing metadata
 
     // Computed per-SFNT fields (like current SFNT in ta.h):
@@ -52,21 +48,22 @@ const TAGS_WE_CREATE: [Tag; 8] = [
     Tag::new(b"VDMX"),
 ];
 
-impl SFNT {
-    pub fn new(font: &FontRef) -> Result<Self, AutohintError> {
-        let mut sfnt = SFNT::default();
+impl TableStore {
+    pub fn new_from_font(font: &FontRef) -> Result<Self, AutohintError> {
+        let mut store = TableStore::default();
         for table in font.table_directory.table_records() {
             if TAGS_WE_CREATE.contains(&table.tag()) {
                 continue;
             }
             if let Some(data) = font.table_data(table.tag()) {
-                sfnt.tables
+                store
+                    .tables
                     .insert(table.tag(), TableEntry::new(data.as_bytes().to_vec()));
             }
         }
         // Ensure we have glyf, loca, head and maxp
         for needed in [b"glyf", b"loca", b"head", b"maxp"] {
-            if !sfnt.tables.contains_key(&Tag::new(needed)) {
+            if !store.tables.contains_key(&Tag::new(needed)) {
                 return Err(AutohintError::MissingTable(Tag::new(needed)));
             }
         }
@@ -77,140 +74,84 @@ impl SFNT {
             .ok_or(AutohintError::InvalidFont(
                 "maxp missing max_component_elements",
             ))?;
-        sfnt.max_composite_points = maxp;
-        Ok(sfnt)
-    }
-}
-
-impl TableStore {
-    pub fn new_from_font(font: &FontRef) -> Result<Self, AutohintError> {
-        let mut store = TableStore::default();
-        store.sfnts.push(SFNT::new(font)?);
+        store.max_composite_points = maxp;
         Ok(store)
     }
-    pub fn add_sfnt(&mut self) -> u32 {
-        let sfnt_index = self.sfnts.len() as u32;
-        self.sfnts.push(SFNT::default());
-        sfnt_index
+
+    pub fn add_table(&mut self, tag: Tag, data: &[u8]) {
+        self.tables.insert(tag, TableEntry::new(data.to_vec()));
     }
 
-    pub fn add_table(&mut self, sfnt_index: usize, tag: Tag, data: &[u8]) {
-        while self.sfnts.len() <= sfnt_index {
-            self.add_sfnt();
-        }
-        self.sfnts[sfnt_index]
-            .tables
-            .insert(tag, TableEntry::new(data.to_vec()));
-    }
-
-    pub fn update_table(&mut self, sfnt_index: usize, tag: Tag, data: &[u8]) {
-        while self.sfnts.len() <= sfnt_index {
-            self.add_sfnt();
-        }
-        self.sfnts[sfnt_index]
-            .tables
+    pub fn update_table(&mut self, tag: Tag, data: &[u8]) {
+        self.tables
             .insert(tag, TableEntry::new_processed(data.to_vec()));
     }
 
-    pub fn set_processed(&mut self, sfnt_index: usize, tag: Tag, processed: bool) {
-        if let Some(sfnt) = self.sfnts.get_mut(sfnt_index) {
-            if let Some(entry) = sfnt.tables.get_mut(&tag) {
-                entry.processed = processed;
-            }
+    pub fn set_processed(&mut self, tag: Tag, processed: bool) {
+        if let Some(entry) = self.tables.get_mut(&tag) {
+            entry.processed = processed;
         }
     }
 
-    pub(crate) fn has_table(&self, sfnt_index: usize, tag: Tag) -> bool {
-        if let Some(sfnt) = self.sfnts.get(sfnt_index) {
-            return sfnt.tables.contains_key(&tag);
-        }
-        false
+    pub(crate) fn has_table(&self, tag: Tag) -> bool {
+        return self.tables.contains_key(&tag);
     }
 
-    pub(crate) fn get_table(&self, sfnt_index: usize, tag: Tag) -> Option<&[u8]> {
-        if let Some(sfnt) = self.sfnts.get(sfnt_index) {
-            if let Some(entry) = sfnt.tables.get(&tag) {
-                return Some(&entry.data);
-            }
-        }
-        None
+    pub(crate) fn get_table(&self, tag: Tag) -> Option<&[u8]> {
+        self.tables.get(&tag).map(|entry| entry.data.as_slice())
     }
 
-    pub(crate) fn get_processed(&self, sfnt_index: usize, tag: Tag) -> bool {
-        if let Some(sfnt) = self.sfnts.get(sfnt_index) {
-            if let Some(entry) = sfnt.tables.get(&tag) {
-                return entry.processed;
-            }
+    pub(crate) fn get_processed(&self, tag: Tag) -> bool {
+        if let Some(entry) = self.tables.get(&tag) {
+            return entry.processed;
         }
         false
     }
 
-    pub(crate) fn clone_table(&self, sfnt_index: usize, tag: Tag) -> Option<Vec<u8>> {
-        if let Some(sfnt) = self.sfnts.get(sfnt_index) {
-            if let Some(entry) = sfnt.tables.get(&tag) {
-                return Some(entry.data.clone());
-            }
+    pub(crate) fn clone_table(&self, tag: Tag) -> Option<Vec<u8>> {
+        if let Some(entry) = self.tables.get(&tag) {
+            return Some(entry.data.clone());
         }
         None
     }
 
-    fn add_dummy_dsig(&mut self, sfnt_index: usize) {
+    fn add_dummy_dsig(&mut self) {
         let dummy_dsig = vec![0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00];
-        self.add_table(sfnt_index, Tag::new(b"DSIG"), &dummy_dsig);
+        self.add_table(Tag::new(b"DSIG"), &dummy_dsig);
     }
 
-    pub(crate) fn build_ttf_complete(&mut self, sfnt_index: usize, have_dsig: bool) -> Vec<u8> {
-        let _ = crate::head::update_head(self, sfnt_index);
+    pub(crate) fn build_ttf_complete(&mut self, have_dsig: bool) -> Vec<u8> {
+        let _ = crate::head::update_head(self);
         if have_dsig {
-            self.add_dummy_dsig(sfnt_index);
+            self.add_dummy_dsig();
         }
-        self.build_ttf(sfnt_index as u32)
+        self.build_ttf()
     }
 
-    pub(crate) fn build_ttf(&self, sfnt_index: u32) -> Vec<u8> {
+    pub(crate) fn build_ttf(&self) -> Vec<u8> {
         let mut builder = write_fonts::FontBuilder::new();
-        if let Some(sfnt) = self.sfnts.get(sfnt_index as usize) {
-            for (tag, entry) in &sfnt.tables {
-                builder.add_raw(*tag, &entry.data);
-            }
+        for (tag, entry) in &self.tables {
+            builder.add_raw(*tag, &entry.data);
         }
         builder.build()
     }
 }
 
-#[allow(clippy::missing_safety_doc)] // it's C, all bets are off
-pub mod c_api {
-    use crate::AutohintError;
+/// Populate one SFNT slot from a raw font buffer + face index.
+pub(crate) fn ta_table_store_populate_sfnt_from_font(
+    tablestore: &mut TableStore,
+    font_data: &[u8],
+) -> Result<(bool, u16), AutohintError> {
+    let font = FontRef::new(font_data)?;
+    let maxp = font.maxp()?;
+    let max_components = maxp
+        .max_component_elements()
+        .ok_or(AutohintError::InvalidFont(
+            "maxp missing max_component_elements",
+        ))?;
 
-    use super::TableStore;
-    use skrifa::raw::TableProvider as _;
-    use skrifa::FontRef;
-
-    use write_fonts::types::Tag;
-    /// Populate one SFNT slot from a raw font buffer + face index.
-    pub(crate) fn ta_table_store_populate_sfnt_from_font(
-        tablestore: &mut TableStore,
-        sfnt_index: u32,
-        font_data: &[u8],
-    ) -> Result<(bool, u16), AutohintError> {
-        let font = FontRef::from_index(font_data, sfnt_index)?;
-        let maxp = font.maxp()?;
-        let max_components = maxp
-            .max_component_elements()
-            .ok_or(AutohintError::InvalidFont(
-                "maxp missing max_component_elements",
-            ))?;
-
-        let mut one_sfnt_store = TableStore::new_from_font(&font)?;
-        let Some(new_sfnt) = one_sfnt_store.sfnts.pop() else {
-            return Err(AutohintError::NullPointer);
-        };
-
-        while tablestore.sfnts.len() <= sfnt_index as usize {
-            tablestore.add_sfnt();
-        }
-        tablestore.sfnts[sfnt_index as usize] = new_sfnt;
-        let have_dsig_out = tablestore.has_table(sfnt_index as usize, Tag::new(b"DSIG"));
-        Ok((have_dsig_out, max_components))
-    }
+    let one_sfnt_store = TableStore::new_from_font(&font)?;
+    tablestore.tables.extend(one_sfnt_store.tables);
+    let have_dsig_out = tablestore.has_table(Tag::new(b"DSIG"));
+    Ok((have_dsig_out, max_components))
 }

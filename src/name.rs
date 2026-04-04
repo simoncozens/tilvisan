@@ -13,15 +13,14 @@ use crate::{
 
 pub(crate) fn update_name_table(
     tablestore: &mut TableStore,
-    sfnt_index: usize,
     idata: &mut InfoData,
     args: &Args,
 ) -> Result<(), AutohintError> {
-    if tablestore.get_processed(sfnt_index, Tag::new(b"name")) {
+    if tablestore.get_processed(Tag::new(b"name")) {
         return Ok(());
     }
 
-    let Some(table) = tablestore.get_table(sfnt_index, Tag::new(b"name")) else {
+    let Some(table) = tablestore.get_table(Tag::new(b"name")) else {
         return Ok(());
     };
 
@@ -67,6 +66,6 @@ pub(crate) fn update_name_table(
         return Ok(());
     };
 
-    tablestore.update_table(sfnt_index, Tag::new(b"name"), &out);
+    tablestore.update_table(Tag::new(b"name"), &out);
     Ok(())
 }

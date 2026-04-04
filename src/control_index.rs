@@ -1,8 +1,6 @@
 use skrifa::GlyphId;
 
-use crate::c_font::Font;
-use crate::intset::IntSet;
-use crate::AutohintError;
+use crate::{c_font::Font, intset::IntSet, AutohintError};
 use std::collections::{BTreeMap, HashMap};
 
 const TA_DIGIT: u16 = 0x8000;
@@ -48,8 +46,8 @@ pub(crate) struct DeltaRule {
 
 #[derive(Debug, Default)]
 pub struct ControlIndex {
-    delta_rules: HashMap<(i32, GlyphId), Vec<DeltaRule>>,
-    coverage_rules: HashMap<i32, Vec<(GlyphId, u16)>>,
+    delta_rules: HashMap<GlyphId, Vec<DeltaRule>>,
+    coverage_rules: Vec<(GlyphId, u16)>,
 }
 
 #[derive(Default)]
@@ -140,19 +138,11 @@ impl ControlIndex {
         let mut index = Self::default();
 
         for ((font_idx, glyph_idx, _ppem, _point), rule) in delta_by_key {
-            index
-                .delta_rules
-                .entry((font_idx, glyph_idx))
-                .or_default()
-                .push(rule);
+            index.delta_rules.entry(glyph_idx).or_default().push(rule);
         }
 
         for ((font_idx, glyph_idx), style) in coverage_by_key {
-            index
-                .coverage_rules
-                .entry(font_idx)
-                .or_default()
-                .push((glyph_idx, style));
+            index.coverage_rules.push((glyph_idx, style));
         }
 
         index
@@ -166,27 +156,21 @@ pub(crate) fn delta_rules_for_glyph(
 ) -> Vec<DeltaRule> {
     index
         .delta_rules
-        .get(&(font_idx, glyph_idx))
+        .get(&(glyph_idx))
         .cloned()
         .unwrap_or_default()
 }
 
-pub(crate) fn control_apply_coverage(font: &mut Font, sfnt_idx: usize) {
+pub(crate) fn control_apply_coverage(font: &mut Font) {
     let Some(index) = font.control.index() else {
         return;
     };
 
-    let Some(rules) = index.coverage_rules.get(&(sfnt_idx as i32)) else {
-        return;
-    };
+    let rules = &index.coverage_rules;
 
     let rules_copy = rules.clone();
-    // Bounds check and get sfnt data.
-    if sfnt_idx >= font.num_sfnts() {
-        return;
-    }
 
-    let sfnt = &mut font.sfnts_owned[sfnt_idx];
+    let sfnt = &mut font.sfnt;
     let glyph_styles = &mut sfnt.glyph_styles;
     for &(glyph_idx, style) in &rules_copy {
         let glyph_idx = glyph_idx.to_u32() as usize;
@@ -233,10 +217,7 @@ mod tests {
         ];
 
         let index = ControlIndex::from_control_entries(&entries);
-        let rules = index
-            .coverage_rules
-            .get(&0)
-            .expect("coverage rules present");
+        let rules = index.coverage_rules;
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0], (GlyphId::new(5), 200));
     }

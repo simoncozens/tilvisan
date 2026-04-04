@@ -41,170 +41,131 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     let hint_composites = font.args.composites;
     let fallback_style = fallback_style_for_script(script_to_index(&font.args.fallback_script));
 
-    let num_sfnts = crate::maxp::num_faces_in_font_binary(&font.in_buf)?;
-    font.init_owned_sfnts(num_sfnts as usize);
     font.table_store = TableStore::default();
-    font.init_owned_glyf_ptrs(num_sfnts as usize);
 
-    for i in 0..num_sfnts {
-        font.sfnts_owned[i as usize].table_store_sfnt_idx = font.table_store.add_sfnt() as usize;
+    if sfnt_has_ttfautohint_glyph(&font.table_store)? {
+        return Err(AutohintError::FontAlreadyProcessed);
     }
-    for (i, sfnt_ref) in font.sfnts_owned.iter_mut().enumerate() {
-        if sfnt_has_ttfautohint_glyph(&font.table_store, i)? {
-            return Err(AutohintError::FontAlreadyProcessed);
-        }
 
-        let glyph_count = crate::maxp::num_glyphs_in_font_binary_at_index(&font.in_buf, i as u32)?;
+    let glyph_count = crate::maxp::num_glyphs_in_font_binary(&font.in_buf)?;
 
-        sfnt_ref.glyph_count = glyph_count as c_long;
-        sfnt_ref.glyph_styles = vec![0; glyph_count as usize];
-    }
+    font.sfnt.glyph_count = glyph_count as c_long;
+    font.sfnt.glyph_styles = vec![0; glyph_count as usize];
 
     crate::control_index::control_build_tree_rs(font)?;
 
-    for i in 0..font.num_sfnts() {
-        let sfnt_table_store_idx = font.sfnts_owned[i].table_store_sfnt_idx;
+    let (have_dsig, max_components) = crate::tablestore::ta_table_store_populate_sfnt_from_font(
+        &mut font.table_store,
+        &font.in_buf,
+    )?;
 
-        let (have_dsig, max_components) =
-            crate::tablestore::c_api::ta_table_store_populate_sfnt_from_font(
-                &mut font.table_store,
-                sfnt_table_store_idx as u32,
-                &font.in_buf,
-            )?;
+    font.have_dsig = have_dsig;
+    font.sfnt.max_components = max_components;
 
-        font.have_dsig = have_dsig;
-        font.sfnts_owned[i].max_components = max_components;
+    let has_legal_permission = crate::maxp::sfnt_has_legal_permission(&font.table_store)?;
+    if !has_legal_permission && !font.args.ignore_restrictions {
+        return Err(AutohintError::MissingLegalPermission);
+    }
 
-        let has_legal_permission =
-            crate::maxp::sfnt_has_legal_permission(&font.table_store, sfnt_table_store_idx)?;
-        if !has_legal_permission && !font.args.ignore_restrictions {
-            return Err(AutohintError::MissingLegalPermission);
-        }
-
-        if dehint {
-            crate::glyf::split_glyf_table(font, i)?;
+    if dehint {
+        crate::glyf::split_glyf_table(font)?;
+    } else {
+        if adjust_subglyphs {
+            crate::glyf::create_glyf_data(font)?;
         } else {
-            if adjust_subglyphs {
-                crate::glyf::create_glyf_data(font, i)?;
-            } else {
-                crate::glyf::split_glyf_table(font, i)?;
-            }
-
-            crate::glyf::handle_coverage(font, i)?;
-
-            font.sfnts_owned[i].increase_x_height = font.args.increase_x_height;
+            crate::glyf::split_glyf_table(font)?;
         }
+
+        crate::glyf::handle_coverage(font)?;
+
+        font.sfnt.increase_x_height = font.args.increase_x_height;
     }
 
     if !dehint {
-        for i in 0..font.num_sfnts() {
-            crate::glyf::adjust_coverage(font, i);
-        }
-        for i in 0..font.num_sfnts() {
-            crate::control_index::control_apply_coverage(font, i);
-        }
+        crate::glyf::adjust_coverage(font);
+        crate::control_index::control_apply_coverage(font);
     }
 
-    for i in 0..font.num_sfnts() {
-        let sfnt_table_store_idx = font.sfnts_owned[i].table_store_sfnt_idx;
+    crate::gasp::update_gasp(&mut font.table_store);
 
-        crate::gasp::update_gasp(&mut font.table_store, sfnt_table_store_idx);
+    if !dehint {
+        crate::cvt::build_cvt_table_store(font)?;
 
-        if !dehint {
-            crate::cvt::build_cvt_table_store(font, i)?;
+        let glyf_data = font
+            .glyf_ptr_owned
+            .take()
+            .ok_or(AutohintError::NullPointer)?;
 
-            let glyf_data = font
-                .glyf_ptrs_owned
-                .get_mut(i)
-                .and_then(Option::take)
-                .ok_or(AutohintError::NullPointer)?;
-
-            let fpgm_len = crate::fpgm::build_fpgm_table(
-                &mut font.table_store,
-                sfnt_table_store_idx,
-                &glyf_data,
-                font.args.increase_x_height,
-                font.control.has_index(),
-                fallback_style as usize,
-            )?;
-            let sfnt_ref = &mut font.sfnts_owned[i];
-            if fpgm_len > sfnt_ref.max_instructions as usize {
-                sfnt_ref.max_instructions = fpgm_len as u16;
-            }
-
-            let prep_stack = build_prep_table(font, sfnt_table_store_idx, &glyf_data)? as u16;
-            let sfnt_ref = &mut font.sfnts_owned[i];
-            if prep_stack > sfnt_ref.max_stack_elements {
-                sfnt_ref.max_stack_elements = prep_stack;
-            }
-
-            font.glyf_ptrs_owned[i] = Some(glyf_data);
+        let fpgm_len = crate::fpgm::build_fpgm_table(
+            &mut font.table_store,
+            &glyf_data,
+            font.args.increase_x_height,
+            font.control.has_index(),
+            fallback_style as usize,
+        )?;
+        let sfnt_ref = &mut font.sfnt;
+        if fpgm_len > sfnt_ref.max_instructions as usize {
+            sfnt_ref.max_instructions = fpgm_len as u16;
         }
 
-        crate::glyf::build_glyf_table(font, i, Some(ta_sfnt_build_glyph_instructions_cb))?;
+        let prep_stack = build_prep_table(font, &glyf_data)? as u16;
+        let sfnt_ref = &mut font.sfnt;
+        if prep_stack > sfnt_ref.max_stack_elements {
+            sfnt_ref.max_stack_elements = prep_stack;
+        }
+
+        font.glyf_ptr_owned = Some(glyf_data);
     }
 
-    for i in 0..font.num_sfnts() {
-        let sfnt = &font.sfnts_owned[i];
-        let sfnt_table_store_idx = sfnt.table_store_sfnt_idx;
-        let sfnt_max_components = sfnt.max_components;
-        let sfnt_max_composite_points = sfnt.max_composite_points;
-        let sfnt_max_composite_contours = sfnt.max_composite_contours;
-        let sfnt_max_twilight_points = sfnt.max_twilight_points;
-        let sfnt_max_storage = sfnt.max_storage;
-        let sfnt_max_stack_elements = sfnt.max_stack_elements;
-        let sfnt_max_instructions = sfnt.max_instructions;
+    crate::glyf::build_glyf_table(font, 0, Some(ta_sfnt_build_glyph_instructions_cb))?;
 
-        if dehint {
-            crate::maxp::update_maxp_table_dehint(&mut font.table_store, sfnt_table_store_idx)?
-        } else {
-            let data = font
-                .glyf_ptrs_owned
-                .get(i)
-                .and_then(Option::as_ref)
-                .ok_or(AutohintError::NullPointer)?;
-            let adjust_composites = sfnt_max_components != 0 && hint_composites;
-            crate::maxp::update_maxp_table_hinted(
-                &mut font.table_store,
-                sfnt_table_store_idx,
-                adjust_composites,
-                data.num_glyphs,
-                sfnt_max_composite_points,
-                sfnt_max_composite_contours,
-                sfnt_max_twilight_points,
-                sfnt_max_storage,
-                sfnt_max_stack_elements,
-                sfnt_max_instructions,
-                sfnt_max_components,
-            )?;
-        }
+    let sfnt = &font.sfnt;
+    let sfnt_max_components = sfnt.max_components;
+    let sfnt_max_composite_points = sfnt.max_composite_points;
+    let sfnt_max_composite_contours = sfnt.max_composite_contours;
+    let sfnt_max_twilight_points = sfnt.max_twilight_points;
+    let sfnt_max_storage = sfnt.max_storage;
+    let sfnt_max_stack_elements = sfnt.max_stack_elements;
+    let sfnt_max_instructions = sfnt.max_instructions;
 
-        if !dehint && sfnt_max_components != 0 && !adjust_subglyphs && hint_composites {
-            crate::hmtx::update_hmtx(&mut font.table_store, sfnt_table_store_idx);
-            crate::post::update_post(&mut font.table_store, sfnt_table_store_idx);
-
-            let data = font
-                .glyf_ptrs_owned
-                .get(i)
-                .and_then(Option::as_ref)
-                .ok_or(AutohintError::NullPointer)?;
-            crate::gpos::update_gpos(&mut font.table_store, sfnt_table_store_idx, &data.glyphs)?;
-        }
-
-        if !font
-            .table_store
-            .has_table(sfnt_table_store_idx, Tag::new(b"TTFA"))
-        {
-            crate::name::update_name_table(
-                &mut font.table_store,
-                sfnt_table_store_idx,
-                &mut font.info_data,
-                &font.args,
-            )?;
-        }
+    if dehint {
+        crate::maxp::update_maxp_table_dehint(&mut font.table_store)?
+    } else {
+        let data = font
+            .glyf_ptr_owned
+            .as_ref()
+            .ok_or(AutohintError::NullPointer)?;
+        let adjust_composites = sfnt_max_components != 0 && hint_composites;
+        crate::maxp::update_maxp_table_hinted(
+            &mut font.table_store,
+            adjust_composites,
+            data.num_glyphs,
+            sfnt_max_composite_points,
+            sfnt_max_composite_contours,
+            sfnt_max_twilight_points,
+            sfnt_max_storage,
+            sfnt_max_stack_elements,
+            sfnt_max_instructions,
+            sfnt_max_components,
+        )?;
     }
 
-    Ok(font.table_store.build_ttf_complete(0, font.have_dsig))
+    if !dehint && sfnt_max_components != 0 && !adjust_subglyphs && hint_composites {
+        crate::hmtx::update_hmtx(&mut font.table_store);
+        crate::post::update_post(&mut font.table_store);
+
+        let data = font
+            .glyf_ptr_owned
+            .as_ref()
+            .ok_or(AutohintError::NullPointer)?;
+        crate::gpos::update_gpos(&mut font.table_store, &data.glyphs)?;
+    }
+
+    if !font.table_store.has_table(Tag::new(b"TTFA")) {
+        crate::name::update_name_table(&mut font.table_store, &mut font.info_data, &font.args)?;
+    }
+
+    Ok(font.table_store.build_ttf_complete(font.have_dsig))
 }
 
 // Keep these tables in sync with C sources:

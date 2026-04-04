@@ -4,10 +4,9 @@ use crate::{
     tablestore::TableStore,
     AutohintError,
 };
-use skrifa::Tag;
 use skrifa::{
     outline::{compute_unscaled_style_metrics_exported, STYLE_CLASSES},
-    FontRef,
+    FontRef, Tag,
 };
 
 const FT_ERR_INVALID_TABLE: u32 = 0x23;
@@ -28,36 +27,22 @@ pub struct TaRsStyleMetrics {
     pub blue_adjustment: Vec<u8>,
 }
 
-pub(crate) fn build_cvt_table_store(
-    font: &mut Font,
-    sfnt_idx: usize,
-) -> Result<(), AutohintError> {
-    let blob_data = build_cvt_table_rs(font, sfnt_idx)?;
-
-    // Bounds check and get sfnt table_store_sfnt_idx
-    if sfnt_idx >= font.num_sfnts() || sfnt_idx >= font.sfnts_owned.len() {
-        return Err(AutohintError::InvalidTable);
-    }
-    let sfnt_table_store_idx = font.sfnts_owned[sfnt_idx].table_store_sfnt_idx;
+pub(crate) fn build_cvt_table_store(font: &mut Font) -> Result<(), AutohintError> {
+    let blob_data = build_cvt_table_rs(font)?;
 
     let table_store = &mut font.table_store;
 
-    if table_store.get_processed(sfnt_table_store_idx, Tag::new(b"glyf")) {
+    if table_store.get_processed(Tag::new(b"glyf")) {
         return Ok(());
     }
 
-    table_store.update_table(
-        sfnt_table_store_idx,
-        Tag::new(b"cvt "),
-        blob_data.bytecode.as_slice(),
-    );
+    table_store.update_table(Tag::new(b"cvt "), blob_data.bytecode.as_slice());
 
     Ok(())
 }
 
 fn compute_style_metrics_rs(
     table_store: &TableStore,
-    sfnt_idx: usize,
     ta_style: usize,
     sample_glyph: u32,
 ) -> Result<TaRsStyleMetrics, u32> {
@@ -69,7 +54,7 @@ fn compute_style_metrics_rs(
         return Err(TA_ERR_MISSING_GLYPH);
     }
 
-    let ttf_bytes = table_store.build_ttf(sfnt_idx as u32);
+    let ttf_bytes = table_store.build_ttf();
     let Ok(font) = FontRef::new(&ttf_bytes) else {
         return Err(FT_ERR_INVALID_TABLE);
     };
@@ -290,23 +275,13 @@ fn build_cvt_blob_rs(
     Ok(out)
 }
 
-fn build_cvt_table_rs(font: &mut Font, sfnt_idx: usize) -> Result<CvtBlobData, AutohintError> {
-    // Bounds check and get sfnt/glyf_data pointers
-    if sfnt_idx >= font.num_sfnts() {
-        return Err(AutohintError::InvalidTable);
-    }
-    if sfnt_idx >= font.glyf_ptrs_owned.len() {
-        return Err(AutohintError::InvalidTable);
-    }
-
+fn build_cvt_table_rs(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
     let glyf_data = font
-        .glyf_ptrs_owned
-        .get_mut(sfnt_idx)
-        .and_then(Option::as_mut)
+        .glyf_ptr_owned
+        .as_mut()
         .ok_or(AutohintError::InvalidTable)?;
 
-    let sfnt_table_store_idx = font.sfnts_owned[sfnt_idx].table_store_sfnt_idx;
-    let sample_glyphs = font.sfnts_owned[sfnt_idx].sample_glyphs;
+    let sample_glyphs = font.sfnt.sample_glyphs;
     let fallback_style = crate::orchestrate::fallback_style_for_script(
         crate::orchestrate::script_to_index(&font.args.fallback_script),
     );
@@ -315,12 +290,7 @@ fn build_cvt_table_rs(font: &mut Font, sfnt_idx: usize) -> Result<CvtBlobData, A
         core::array::from_fn(|_| TaRsStyleMetrics::default());
 
     for style_idx in 0..TA_STYLE_MAX {
-        match compute_style_metrics_rs(
-            &font.table_store,
-            sfnt_table_store_idx,
-            style_idx,
-            sample_glyphs[style_idx],
-        ) {
+        match compute_style_metrics_rs(&font.table_store, style_idx, sample_glyphs[style_idx]) {
             Ok(metrics) => {
                 style_metrics[style_idx] = metrics;
             }
@@ -331,14 +301,13 @@ fn build_cvt_table_rs(font: &mut Font, sfnt_idx: usize) -> Result<CvtBlobData, A
         }
 
         if style_metrics[style_idx].blue_refs.is_empty() {
-            let sfnt_mut = &mut font.sfnts_owned[sfnt_idx];
+            let sfnt_mut = &mut font.sfnt;
             sfnt_mut.sample_glyphs[style_idx] = 0;
             replace_style_with_fallback(sfnt_mut, style_idx, fallback_style as u16);
         }
     }
 
-    let units_per_em =
-        crate::maxp::units_per_em_in_font_binary_at_index(&font.in_buf, sfnt_idx as u32)?;
+    let units_per_em = crate::maxp::units_per_em_in_font_binary(&font.in_buf)?;
 
     let blob_data = match build_cvt_blob_rs(
         &style_metrics,

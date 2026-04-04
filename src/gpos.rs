@@ -46,14 +46,13 @@ fn update_nullable_anchor(
 
 pub(crate) fn update_gpos(
     tablestore: &mut TableStore,
-    sfnt_index: usize,
     glyphs: &[ScaledGlyph],
 ) -> Result<(), AutohintError> {
-    if tablestore.get_processed(sfnt_index, Tag::new(b"GPOS")) {
+    if tablestore.get_processed(Tag::new(b"GPOS")) {
         return Ok(());
     }
 
-    let Some(table) = tablestore.get_table(sfnt_index, Tag::new(b"GPOS")) else {
+    let Some(table) = tablestore.get_table(Tag::new(b"GPOS")) else {
         return Ok(());
     };
 
@@ -184,8 +183,8 @@ pub(crate) fn update_gpos(
     }
 
     let dumped = write_fonts::dump_table(&write_table)?;
-    tablestore.update_table(sfnt_index, Tag::new(b"GPOS"), &dumped);
-    tablestore.set_processed(sfnt_index, Tag::new(b"GPOS"), true);
+    tablestore.update_table(Tag::new(b"GPOS"), &dumped);
+    tablestore.set_processed(Tag::new(b"GPOS"), true);
 
     Ok(())
 }

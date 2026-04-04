@@ -6,15 +6,12 @@ use write_fonts::{dump_table, from_obj::ToOwnedTable, read::FileRef, tables::max
 
 use crate::{error::AutohintError, opcodes::FunctionNumbers, tablestore::TableStore};
 
-pub(crate) fn update_maxp_table_dehint(
-    tablestore: &mut TableStore,
-    sfnt_index: usize,
-) -> Result<(), AutohintError> {
-    if tablestore.get_processed(sfnt_index, Tag::new(b"maxp")) {
+pub(crate) fn update_maxp_table_dehint(tablestore: &mut TableStore) -> Result<(), AutohintError> {
+    if tablestore.get_processed(Tag::new(b"maxp")) {
         return Ok(());
     }
 
-    let Some(table) = tablestore.get_table(sfnt_index, Tag::new(b"maxp")) else {
+    let Some(table) = tablestore.get_table(Tag::new(b"maxp")) else {
         return Ok(());
     };
 
@@ -31,7 +28,7 @@ pub(crate) fn update_maxp_table_dehint(
 
     let out = dump_table(&write_table)?;
 
-    tablestore.update_table(sfnt_index, Tag::new(b"maxp"), &out);
+    tablestore.update_table(Tag::new(b"maxp"), &out);
 
     Ok(())
 }
@@ -39,7 +36,6 @@ pub(crate) fn update_maxp_table_dehint(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_maxp_table_hinted(
     tablestore: &mut TableStore,
-    sfnt_index: usize,
     adjust_composites: bool,
     num_glyphs: u16,
     max_composite_points: u16,
@@ -50,11 +46,11 @@ pub(crate) fn update_maxp_table_hinted(
     max_instructions: u16,
     max_components: u16,
 ) -> Result<(), AutohintError> {
-    if tablestore.get_processed(sfnt_index, Tag::new(b"maxp")) {
+    if tablestore.get_processed(Tag::new(b"maxp")) {
         return Ok(());
     }
 
-    let Some(table) = tablestore.get_table(sfnt_index, Tag::new(b"maxp")) else {
+    let Some(table) = tablestore.get_table(Tag::new(b"maxp")) else {
         return Ok(());
     };
 
@@ -77,7 +73,7 @@ pub(crate) fn update_maxp_table_hinted(
 
     let out = dump_table(&write_table)?;
 
-    tablestore.update_table(sfnt_index, Tag::new(b"maxp"), &out);
+    tablestore.update_table(Tag::new(b"maxp"), &out);
 
     Ok(())
 }
@@ -85,13 +81,10 @@ pub(crate) fn update_maxp_table_hinted(
 const TTFAUTOHINT_GLYPH_NAME: &[u8] = b".ttfautohint";
 const OS2_FSTYPE_OFFSET: usize = 8;
 
-pub(crate) fn sfnt_has_ttfautohint_glyph(
-    tablestore: &TableStore,
-    sfnt_index: usize,
-) -> Result<bool, AutohintError> {
+pub(crate) fn sfnt_has_ttfautohint_glyph(tablestore: &TableStore) -> Result<bool, AutohintError> {
     // NOTE: TableStore-based implementation. If needed, this can be swapped to
     // GlyphNames::new(fontref) once a stable FontRef-from-TableStore path is wired here.
-    let Some(post_table) = tablestore.get_table(sfnt_index, Tag::new(b"post")) else {
+    let Some(post_table) = tablestore.get_table(Tag::new(b"post")) else {
         return Ok(false);
     };
 
@@ -100,11 +93,8 @@ pub(crate) fn sfnt_has_ttfautohint_glyph(
         .any(|w| w == TTFAUTOHINT_GLYPH_NAME))
 }
 
-pub(crate) fn sfnt_has_legal_permission(
-    tablestore: &TableStore,
-    sfnt_index: usize,
-) -> Result<bool, AutohintError> {
-    let Some(os2_table) = tablestore.get_table(sfnt_index, Tag::new(b"OS/2")) else {
+pub(crate) fn sfnt_has_legal_permission(tablestore: &TableStore) -> Result<bool, AutohintError> {
+    let Some(os2_table) = tablestore.get_table(Tag::new(b"OS/2")) else {
         return Ok(true);
     };
 
@@ -123,20 +113,14 @@ pub(crate) fn num_faces_in_font_binary(data: &[u8]) -> Result<u32, AutohintError
     Ok(count)
 }
 
-pub(crate) fn num_glyphs_in_font_binary_at_index(
-    data: &[u8],
-    index: u32,
-) -> Result<u16, AutohintError> {
-    let fontref = FontRef::from_index(data, index)?;
+pub(crate) fn num_glyphs_in_font_binary(data: &[u8]) -> Result<u16, AutohintError> {
+    let fontref = FontRef::new(data)?;
     let maxp = fontref.maxp()?;
     Ok(maxp.num_glyphs())
 }
 
-pub(crate) fn units_per_em_in_font_binary_at_index(
-    data: &[u8],
-    index: u32,
-) -> Result<u16, AutohintError> {
-    let fontref = FontRef::from_index(data, index)?;
+pub(crate) fn units_per_em_in_font_binary(data: &[u8]) -> Result<u16, AutohintError> {
+    let fontref = FontRef::new(data)?;
     let head = fontref.head()?;
     Ok(head.units_per_em())
 }
