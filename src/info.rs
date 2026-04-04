@@ -1,4 +1,4 @@
-use crate::{control::NumberSetAst, AutohintError};
+use crate::{control::NumberSetAst, orchestrate::parse_stem_width_mode_values, AutohintError};
 use std::collections::BTreeMap;
 
 #[derive(Default, Debug, Clone)]
@@ -16,7 +16,7 @@ impl InfoData {
             family_data: std::collections::BTreeMap::new(),
         };
 
-        parse_stem_width_mode(&args.stem_width_mode)?;
+        parse_stem_width_mode_values(&args.stem_width_mode)?;
 
         if !args.no_info {
             let ret = build_version_string(&mut idata, args);
@@ -38,28 +38,6 @@ pub struct Family {
     name_id_16: Option<usize>,
     name_id_21: Option<usize>,
     family_name: Option<Vec<u8>>,
-}
-
-fn parse_stem_width_mode(mode: &str) -> Result<(i32, i32, i32), AutohintError> {
-    if mode.len() != 3 {
-        return Err(AutohintError::InvalidArgument(
-            "Stem width mode string must consist of exactly three letters".to_string(),
-        ));
-    }
-    let parse_mode = |c| match c {
-        'n' => Ok(-1),
-        'q' => Ok(0),
-        's' => Ok(1),
-        _ => Err(AutohintError::InvalidArgument(
-            "Stem width mode letter must be 'n', 'q', or 's'".to_string(),
-        )),
-    };
-    let chars: Vec<char> = mode.chars().collect();
-    Ok((
-        parse_mode(chars[0])?,
-        parse_mode(chars[1])?,
-        parse_mode(chars[2])?,
-    ))
 }
 
 pub fn build_version_string(idata: &mut InfoData, args: &crate::args::Args) -> i32 {
@@ -107,7 +85,7 @@ pub fn build_version_string(idata: &mut InfoData, args: &crate::args::Args) -> i
     }
 
     let Ok((gray_stem_width_mode, gdi_cleartype_stem_width_mode, dw_cleartype_stem_width_mode)) =
-        parse_stem_width_mode(&args.stem_width_mode)
+        parse_stem_width_mode_values(&args.stem_width_mode)
     else {
         return 1;
     };
