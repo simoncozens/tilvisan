@@ -9,7 +9,7 @@ use write_fonts::{
     NullableOffsetMarker,
 };
 
-use crate::{glyf::ScaledGlyph, tablestore::TableStore, AutohintError};
+use crate::{c_font::Font, glyf::ScaledGlyph, AutohintError};
 
 fn update_anchor(anchor: &mut AnchorTable, glyph: Option<&ScaledGlyph>) {
     let Some(ScaledGlyph {
@@ -44,17 +44,20 @@ fn update_nullable_anchor(
     }
 }
 
-pub(crate) fn update_gpos(
-    tablestore: &mut TableStore,
-    glyphs: &[ScaledGlyph],
-) -> Result<(), AutohintError> {
-    if tablestore.get_processed(Tag::new(b"GPOS")) {
+pub(crate) fn update_gpos(font: &mut Font) -> Result<(), AutohintError> {
+    if font.get_processed(Tag::new(b"GPOS")) {
         return Ok(());
     }
 
-    let Some(table) = tablestore.get_table(Tag::new(b"GPOS")) else {
+    let Some(table) = font.get_table(Tag::new(b"GPOS")) else {
         return Ok(());
     };
+
+    let data = font
+        .glyf_ptr_owned
+        .as_ref()
+        .ok_or(AutohintError::NullPointer)?;
+    let glyphs = &data.glyphs;
 
     let read_table = write_fonts::read::tables::gpos::Gpos::read(FontData::new(table))?;
     let mut write_table: Gpos = read_table.to_owned_table();
@@ -183,8 +186,8 @@ pub(crate) fn update_gpos(
     }
 
     let dumped = write_fonts::dump_table(&write_table)?;
-    tablestore.update_table(Tag::new(b"GPOS"), &dumped);
-    tablestore.set_processed(Tag::new(b"GPOS"), true);
+    font.update_table(Tag::new(b"GPOS"), &dumped);
+    font.set_processed(Tag::new(b"GPOS"), true);
 
     Ok(())
 }

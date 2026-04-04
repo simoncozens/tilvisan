@@ -102,8 +102,7 @@ pub(crate) fn build_prep_table(
     font: &mut Font,
     glyf_data: &GlyfData,
 ) -> Result<usize, AutohintError> {
-    let tablestore = &mut font.table_store;
-    if tablestore.get_processed(Tag::new(b"glyf")) {
+    if font.get_processed(Tag::new(b"glyf")) {
         return Err(AutohintError::TableAlreadyProcessed);
     }
 
@@ -302,7 +301,7 @@ pub(crate) fn build_prep_table(
     bytecode.extend(PREP_set_default_cvs_values);
 
     let out: Vec<u8> = bytecode.as_slice().to_vec();
-    tablestore.update_table(Tag::new(b"prep"), &out);
+    font.update_table(Tag::new(b"prep"), &out);
     Ok(num_stack_elements.unwrap_or(0))
 }
 

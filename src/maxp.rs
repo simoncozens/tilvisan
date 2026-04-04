@@ -4,14 +4,14 @@ use skrifa::{
 };
 use write_fonts::{dump_table, from_obj::ToOwnedTable, read::FileRef, tables::maxp::Maxp};
 
-use crate::{error::AutohintError, opcodes::FunctionNumbers, tablestore::TableStore};
+use crate::{c_font::Font, error::AutohintError, opcodes::FunctionNumbers};
 
-pub(crate) fn update_maxp_table_dehint(tablestore: &mut TableStore) -> Result<(), AutohintError> {
-    if tablestore.get_processed(Tag::new(b"maxp")) {
+pub(crate) fn update_maxp_table_dehint(font: &mut Font) -> Result<(), AutohintError> {
+    if font.get_processed(Tag::new(b"maxp")) {
         return Ok(());
     }
 
-    let Some(table) = tablestore.get_table(Tag::new(b"maxp")) else {
+    let Some(table) = font.get_table(Tag::new(b"maxp")) else {
         return Ok(());
     };
 
@@ -28,14 +28,14 @@ pub(crate) fn update_maxp_table_dehint(tablestore: &mut TableStore) -> Result<()
 
     let out = dump_table(&write_table)?;
 
-    tablestore.update_table(Tag::new(b"maxp"), &out);
+    font.update_table(Tag::new(b"maxp"), &out);
 
     Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_maxp_table_hinted(
-    tablestore: &mut TableStore,
+    font: &mut Font,
     adjust_composites: bool,
     num_glyphs: u16,
     max_composite_points: u16,
@@ -46,11 +46,11 @@ pub(crate) fn update_maxp_table_hinted(
     max_instructions: u16,
     max_components: u16,
 ) -> Result<(), AutohintError> {
-    if tablestore.get_processed(Tag::new(b"maxp")) {
+    if font.get_processed(Tag::new(b"maxp")) {
         return Ok(());
     }
 
-    let Some(table) = tablestore.get_table(Tag::new(b"maxp")) else {
+    let Some(table) = font.get_table(Tag::new(b"maxp")) else {
         return Ok(());
     };
 
@@ -73,7 +73,7 @@ pub(crate) fn update_maxp_table_hinted(
 
     let out = dump_table(&write_table)?;
 
-    tablestore.update_table(Tag::new(b"maxp"), &out);
+    font.update_table(Tag::new(b"maxp"), &out);
 
     Ok(())
 }
@@ -81,10 +81,10 @@ pub(crate) fn update_maxp_table_hinted(
 const TTFAUTOHINT_GLYPH_NAME: &[u8] = b".ttfautohint";
 const OS2_FSTYPE_OFFSET: usize = 8;
 
-pub(crate) fn sfnt_has_ttfautohint_glyph(tablestore: &TableStore) -> Result<bool, AutohintError> {
-    // NOTE: TableStore-based implementation. If needed, this can be swapped to
-    // GlyphNames::new(fontref) once a stable FontRef-from-TableStore path is wired here.
-    let Some(post_table) = tablestore.get_table(Tag::new(b"post")) else {
+pub(crate) fn sfnt_has_ttfautohint_glyph(font: &Font) -> Result<bool, AutohintError> {
+    // NOTE: font-based implementation. If needed, this can be swapped to
+    // GlyphNames::new(fontref) once a stable FontRef-from-font path is wired here.
+    let Some(post_table) = font.get_table(Tag::new(b"post")) else {
         return Ok(false);
     };
 
@@ -93,8 +93,8 @@ pub(crate) fn sfnt_has_ttfautohint_glyph(tablestore: &TableStore) -> Result<bool
         .any(|w| w == TTFAUTOHINT_GLYPH_NAME))
 }
 
-pub(crate) fn sfnt_has_legal_permission(tablestore: &TableStore) -> Result<bool, AutohintError> {
-    let Some(os2_table) = tablestore.get_table(Tag::new(b"OS/2")) else {
+pub(crate) fn sfnt_has_legal_permission(font: &Font) -> Result<bool, AutohintError> {
+    let Some(os2_table) = font.get_table(Tag::new(b"OS/2")) else {
         return Ok(true);
     };
 

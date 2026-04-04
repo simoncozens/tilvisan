@@ -2,9 +2,9 @@
 use crate::{
     bytecode::{Bytecode, CONTROL_DELTA_PPEM_MIN},
     bytes,
+    c_font::Font,
     glyf::GlyfData,
     opcodes::*,
-    tablestore::TableStore,
     AutohintError,
 };
 use skrifa::Tag;
@@ -5947,13 +5947,13 @@ fn build_fpgm(
 }
 
 pub(crate) fn build_fpgm_table(
-    tablestore: &mut TableStore,
+    font: &mut Font,
     glyf_data: &GlyfData,
     increase_x_height: u32,
     has_control_data: bool,
     font_fallback_style: usize,
 ) -> Result<usize, AutohintError> {
-    if tablestore.get_processed(Tag::new(b"glyf")) {
+    if font.get_processed(Tag::new(b"glyf")) {
         return Ok(0);
     }
 
@@ -5965,7 +5965,7 @@ pub(crate) fn build_fpgm_table(
     );
     let out: Vec<u8> = bytecode.as_slice().to_vec();
     let fpgm_len = out.len();
-    tablestore.update_table(Tag::new(b"fpgm"), &out);
+    font.update_table(Tag::new(b"fpgm"), &out);
 
     Ok(fpgm_len)
 }

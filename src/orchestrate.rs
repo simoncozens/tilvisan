@@ -12,7 +12,6 @@ use crate::{
     maxp::sfnt_has_ttfautohint_glyph,
     prep::build_prep_table,
     recorder::build_glyph_instructions,
-    tablestore::TableStore,
     Args, AutohintError,
 };
 use std::{
@@ -41,28 +40,19 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     let hint_composites = font.args.composites;
     let fallback_style = fallback_style_for_script(script_to_index(&font.args.fallback_script));
 
-    font.table_store = TableStore::default();
-
-    if sfnt_has_ttfautohint_glyph(&font.table_store)? {
+    if sfnt_has_ttfautohint_glyph(font)? {
         return Err(AutohintError::FontAlreadyProcessed);
     }
 
     let glyph_count = crate::maxp::num_glyphs_in_font_binary(&font.in_buf)?;
+    println!("Font.sfnt: {:#?}", font.sfnt);
 
     font.sfnt.glyph_count = glyph_count as c_long;
     font.sfnt.glyph_styles = vec![0; glyph_count as usize];
 
     crate::control_index::control_build_tree_rs(font)?;
 
-    let (have_dsig, max_components) = crate::tablestore::ta_table_store_populate_sfnt_from_font(
-        &mut font.table_store,
-        &font.in_buf,
-    )?;
-
-    font.have_dsig = have_dsig;
-    font.sfnt.max_components = max_components;
-
-    let has_legal_permission = crate::maxp::sfnt_has_legal_permission(&font.table_store)?;
+    let has_legal_permission = crate::maxp::sfnt_has_legal_permission(font)?;
     if !has_legal_permission && !font.args.ignore_restrictions {
         return Err(AutohintError::MissingLegalPermission);
     }
@@ -86,7 +76,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
         crate::control_index::control_apply_coverage(font);
     }
 
-    crate::gasp::update_gasp(&mut font.table_store);
+    crate::gasp::update_gasp(font);
 
     if !dehint {
         crate::cvt::build_cvt_table_store(font)?;
@@ -97,7 +87,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
             .ok_or(AutohintError::NullPointer)?;
 
         let fpgm_len = crate::fpgm::build_fpgm_table(
-            &mut font.table_store,
+            font,
             &glyf_data,
             font.args.increase_x_height,
             font.control.has_index(),
@@ -129,7 +119,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     let sfnt_max_instructions = sfnt.max_instructions;
 
     if dehint {
-        crate::maxp::update_maxp_table_dehint(&mut font.table_store)?
+        crate::maxp::update_maxp_table_dehint(font)?
     } else {
         let data = font
             .glyf_ptr_owned
@@ -137,7 +127,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
             .ok_or(AutohintError::NullPointer)?;
         let adjust_composites = sfnt_max_components != 0 && hint_composites;
         crate::maxp::update_maxp_table_hinted(
-            &mut font.table_store,
+            font,
             adjust_composites,
             data.num_glyphs,
             sfnt_max_composite_points,
@@ -151,21 +141,17 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     }
 
     if !dehint && sfnt_max_components != 0 && !adjust_subglyphs && hint_composites {
-        crate::hmtx::update_hmtx(&mut font.table_store);
-        crate::post::update_post(&mut font.table_store);
+        crate::hmtx::update_hmtx(font);
+        crate::post::update_post(font);
 
-        let data = font
-            .glyf_ptr_owned
-            .as_ref()
-            .ok_or(AutohintError::NullPointer)?;
-        crate::gpos::update_gpos(&mut font.table_store, &data.glyphs)?;
+        crate::gpos::update_gpos(font)?;
     }
 
-    if !font.table_store.has_table(Tag::new(b"TTFA")) {
-        crate::name::update_name_table(&mut font.table_store, &mut font.info_data, &font.args)?;
+    if !font.has_table(Tag::new(b"TTFA")) {
+        crate::name::update_name_table(font)?;
     }
 
-    Ok(font.table_store.build_ttf_complete(font.have_dsig))
+    Ok(font.build_ttf_complete(font.have_dsig))
 }
 
 // Keep these tables in sync with C sources:
@@ -259,12 +245,11 @@ pub fn ttfautohint(
         }
     }
 
-    let mut font = TaFont::default();
+    let mut font = TaFont::new(call.in_buf.clone())?;
     font.args = args.clone();
 
     font.progress = None;
     font.info_data = idata.clone();
-    font.in_buf = call.in_buf.clone();
     font.control.set_entries(control_entries);
 
     if let Some(reference_buf) = reference_slice {

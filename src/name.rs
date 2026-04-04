@@ -5,22 +5,17 @@ use skrifa::{
 use write_fonts::{dump_table, from_obj::ToOwnedTable, tables::name::Name};
 
 use crate::{
-    args::Args,
-    info::{process_name_post, process_name_record, InfoData},
-    tablestore::TableStore,
+    c_font::Font,
+    info::{process_name_post, process_name_record},
     AutohintError,
 };
 
-pub(crate) fn update_name_table(
-    tablestore: &mut TableStore,
-    idata: &mut InfoData,
-    args: &Args,
-) -> Result<(), AutohintError> {
-    if tablestore.get_processed(Tag::new(b"name")) {
+pub(crate) fn update_name_table(font: &mut Font) -> Result<(), AutohintError> {
+    if font.get_processed(Tag::new(b"name")) {
         return Ok(());
     }
 
-    let Some(table) = tablestore.get_table(Tag::new(b"name")) else {
+    let Some(table) = font.get_table(Tag::new(b"name")) else {
         return Ok(());
     };
 
@@ -38,6 +33,8 @@ pub(crate) fn update_name_table(
         .iter()
         .map(|r| r.string.to_string().into_bytes())
         .collect();
+    let idata = &mut font.info_data;
+    let args = &font.args;
 
     // Process each record.  We always lie and claim Latin1 (platform 1,
     // encoding 0, language 0) to match the original callback convention.
@@ -66,6 +63,6 @@ pub(crate) fn update_name_table(
         return Ok(());
     };
 
-    tablestore.update_table(Tag::new(b"name"), &out);
+    font.update_table(Tag::new(b"name"), &out);
     Ok(())
 }

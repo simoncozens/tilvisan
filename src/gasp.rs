@@ -1,8 +1,8 @@
 use write_fonts::types::Tag;
 
-use crate::tablestore::TableStore;
+use crate::c_font::Font;
 
-pub(crate) fn update_gasp(tablestore: &mut TableStore) {
+pub(crate) fn update_gasp(tablestore: &mut Font) {
     if tablestore.has_table(Tag::new(b"gasp")) {
         return;
     }

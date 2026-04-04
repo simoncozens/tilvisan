@@ -1,7 +1,6 @@
 use crate::{
     bytecode::Bytecode,
     c_font::{Font, Sfnt},
-    tablestore::TableStore,
     AutohintError,
 };
 use skrifa::{
@@ -30,19 +29,17 @@ pub struct TaRsStyleMetrics {
 pub(crate) fn build_cvt_table_store(font: &mut Font) -> Result<(), AutohintError> {
     let blob_data = build_cvt_table_rs(font)?;
 
-    let table_store = &mut font.table_store;
-
-    if table_store.get_processed(Tag::new(b"glyf")) {
+    if font.get_processed(Tag::new(b"glyf")) {
         return Ok(());
     }
 
-    table_store.update_table(Tag::new(b"cvt "), blob_data.bytecode.as_slice());
+    font.update_table(Tag::new(b"cvt "), blob_data.bytecode.as_slice());
 
     Ok(())
 }
 
 fn compute_style_metrics_rs(
-    table_store: &TableStore,
+    font: &mut Font,
     ta_style: usize,
     sample_glyph: u32,
 ) -> Result<TaRsStyleMetrics, u32> {
@@ -54,7 +51,7 @@ fn compute_style_metrics_rs(
         return Err(TA_ERR_MISSING_GLYPH);
     }
 
-    let ttf_bytes = table_store.build_ttf();
+    let ttf_bytes = font.build_ttf();
     let Ok(font) = FontRef::new(&ttf_bytes) else {
         return Err(FT_ERR_INVALID_TABLE);
     };
@@ -276,11 +273,6 @@ fn build_cvt_blob_rs(
 }
 
 fn build_cvt_table_rs(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
-    let glyf_data = font
-        .glyf_ptr_owned
-        .as_mut()
-        .ok_or(AutohintError::InvalidTable)?;
-
     let sample_glyphs = font.sfnt.sample_glyphs;
     let fallback_style = crate::orchestrate::fallback_style_for_script(
         crate::orchestrate::script_to_index(&font.args.fallback_script),
@@ -290,7 +282,7 @@ fn build_cvt_table_rs(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
         core::array::from_fn(|_| TaRsStyleMetrics::default());
 
     for style_idx in 0..TA_STYLE_MAX {
-        match compute_style_metrics_rs(&font.table_store, style_idx, sample_glyphs[style_idx]) {
+        match compute_style_metrics_rs(font, style_idx, sample_glyphs[style_idx]) {
             Ok(metrics) => {
                 style_metrics[style_idx] = metrics;
             }
@@ -323,6 +315,10 @@ fn build_cvt_table_rs(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
     if blob_data.num_used_styles == 0 && !font.args.symbol {
         return Err(AutohintError::UnportedError(TA_ERR_MISSING_GLYPH as i32));
     }
+    let glyf_data = font
+        .glyf_ptr_owned
+        .as_mut()
+        .ok_or(AutohintError::InvalidTable)?;
 
     glyf_data.num_used_styles = blob_data.num_used_styles;
     glyf_data.style_ids = blob_data.style_ids;

@@ -4,7 +4,7 @@ use skrifa::GlyphId;
 
 use crate::{
     bytecode::Bytecode,
-    c_font::{Font, MISSING},
+    c_font::Font,
     glyf::{extract_unscaled_outline, ScaledGlyph},
     loader::build_subglyph_shifter_bytecode,
     logger::set_debug_logging,
@@ -12,7 +12,6 @@ use crate::{
         CvtLocations, FunctionNumbers, StorageAreaLocations, CALL, CVT_SCALING_VALUE_OFFSET, EIF,
         ELSE, IF, LT, MPPEM, NPUSHB, NPUSHW, PUSHB_1, PUSHB_2, PUSHW_1, WCVTP,
     },
-    tablestore::TableStore,
     AutohintError,
 };
 use skrifa::outline::{ExportedHintPlan, ExportedHintRecord};
@@ -1192,7 +1191,7 @@ fn recorder_record_hints_for_ppem(
     }
 
     let rust_plan = crate::glyf::compute_hint_plan_rs(
-        &font.table_store,
+        &font,
         glyph_idx,
         ta_style,
         is_non_base as u8,
@@ -1578,7 +1577,7 @@ pub(crate) fn build_glyph_instructions(
     let mut is_empty_glyph = !is_composite_glyph && glyph_ref.num_contours() == 0;
     let mut glyph_num_points = glyph_ref.num_points() as u32;
 
-    if let Ok(info) = crate::loader::load_glyph_info(&font_ref.table_store, idx) {
+    if let Ok(info) = crate::loader::load_glyph_info(&font_ref, idx) {
         is_composite_glyph = info.kind == 2;
         is_empty_glyph = info.kind == 0;
         glyph_num_points = info.num_points as u32;
@@ -1591,7 +1590,7 @@ pub(crate) fn build_glyph_instructions(
     let mut bytecode = Bytecode::new();
 
     if is_composite_glyph {
-        let subglyph = match build_subglyph_shifter_bytecode(&font_ref.table_store, idx) {
+        let subglyph = match build_subglyph_shifter_bytecode(&font_ref, idx) {
             Ok(v) => v,
             Err(status) => return Err(AutohintError::UnportedError(status as i32)),
         };
@@ -1602,12 +1601,8 @@ pub(crate) fn build_glyph_instructions(
             use_gstyle_data = false;
         } else if ta_style == fallback_style {
             let recorder = RustRecorder::new(&glyph_ref);
-            let (emitted, num_args) = build_glyph_scaler_bytecode(
-                &recorder,
-                &font_ref.table_store,
-                idx,
-                font_ref.args.composites,
-            )?;
+            let (emitted, num_args) =
+                build_glyph_scaler_bytecode(&recorder, &font_ref, idx, font_ref.args.composites)?;
             bytecode.extend(emitted);
 
             let num_storage = StorageAreaLocations::sal_segment_offset as u16;
@@ -1667,7 +1662,7 @@ pub(crate) fn build_glyph_instructions(
             if action_hints_records.is_empty_singleton() {
                 let (emitted, num_args) = build_glyph_scaler_bytecode(
                     &recorder,
-                    &font_ref.table_store,
+                    &font_ref,
                     idx,
                     font_ref.args.composites,
                 )?;
@@ -1737,7 +1732,7 @@ pub(crate) fn build_glyph_instructions(
                 let pos2 = bytecode.as_slice().len();
                 let segment_result = build_glyph_segments_bytecode(
                     &recorder,
-                    &font_ref.table_store,
+                    &font_ref,
                     idx,
                     font_ref.args.composites,
                     style_id,
@@ -1815,12 +1810,8 @@ pub(crate) fn build_glyph_instructions(
         }
 
         if action_hints_records.is_empty_singleton() {
-            let (emitted, num_args) = build_glyph_scaler_bytecode(
-                &recorder,
-                &font_ref.table_store,
-                idx,
-                font_ref.args.composites,
-            )?;
+            let (emitted, num_args) =
+                build_glyph_scaler_bytecode(&recorder, &font_ref, idx, font_ref.args.composites)?;
             bytecode.extend(emitted);
 
             let num_storage = StorageAreaLocations::sal_segment_offset as u16;
@@ -1886,7 +1877,7 @@ pub(crate) fn build_glyph_instructions(
             let pos2 = bytecode.as_slice().len();
             let segment_result = build_glyph_segments_bytecode(
                 &recorder,
-                &font_ref.table_store,
+                &font_ref,
                 idx,
                 font_ref.args.composites,
                 style_id,
@@ -1969,11 +1960,11 @@ pub(crate) fn build_glyph_instructions(
 /// 0x50 (FT_Err_Out_Of_Memory) on allocation failure.
 fn build_glyph_scaler_bytecode(
     recorder: &RustRecorder,
-    table_store: &TableStore,
+    font: &Font,
     glyph_id: GlyphId,
     hint_composites: bool,
 ) -> Result<(Bytecode, usize), AutohintError> {
-    let outline = match extract_unscaled_outline(table_store, glyph_id) {
+    let outline = match extract_unscaled_outline(font, glyph_id) {
         Ok(v) => v,
         Err(_) => return Err(AutohintError::NullPointer),
     };
@@ -2060,7 +2051,7 @@ fn build_glyph_scaler_bytecode(
 /// order (already filtered by segment map).
 fn build_glyph_segments_bytecode(
     recorder: &RustRecorder,
-    table_store: &crate::tablestore::TableStore,
+    font: &Font,
     glyph_id: GlyphId,
     hint_composites: bool,
     style_id: u32,
@@ -2077,7 +2068,7 @@ fn build_glyph_segments_bytecode(
     let first = first_indices;
     let last = last_indices;
 
-    let outline = match extract_unscaled_outline(table_store, glyph_id) {
+    let outline = match extract_unscaled_outline(font, glyph_id) {
         Ok(v) => v,
         Err(_) => return Err(AutohintError::InvalidTable),
     };

@@ -1,7 +1,7 @@
 use crate::{
     bytecode::{high, low, Bytecode},
+    c_font::Font,
     opcodes::{CALL, PUSHB_1, PUSHB_2, PUSHW_1, PUSHW_2},
-    tablestore::TableStore,
 };
 use skrifa::{
     raw::{
@@ -83,8 +83,8 @@ pub struct TaRsLoaderGlyphInfo {
 }
 
 impl TaRsLoaderGlyphInfo {
-    pub fn new(table_store: &TableStore, glyph_id: GlyphId) -> Result<Self, TaRsLoaderStatus> {
-        let ttf_bytes = table_store.build_ttf();
+    pub fn new(font: &Font, glyph_id: GlyphId) -> Result<Self, TaRsLoaderStatus> {
+        let ttf_bytes = font.build_ttf();
         let Ok(font) = skrifa::FontRef::new(&ttf_bytes) else {
             return Err(TaRsLoaderStatus::InvalidArgument);
         };
@@ -125,10 +125,10 @@ impl TaRsLoaderGlyphInfo {
 }
 
 pub(crate) fn load_glyph_info(
-    table_store: &TableStore,
+    font: &Font,
     glyph_id: GlyphId,
 ) -> Result<TaRsLoaderGlyphInfo, TaRsLoaderStatus> {
-    TaRsLoaderGlyphInfo::new(table_store, glyph_id)
+    TaRsLoaderGlyphInfo::new(font, glyph_id)
 }
 
 #[repr(C)]
@@ -186,10 +186,10 @@ fn load_components_vec(
 }
 
 pub(crate) fn build_subglyph_shifter_bytecode(
-    table_store: &TableStore,
+    font: &Font,
     glyph_id: GlyphId,
 ) -> Result<Bytecode, TaRsLoaderStatus> {
-    let ttf_bytes = table_store.build_ttf();
+    let ttf_bytes = font.build_ttf();
     let Ok(font) = skrifa::FontRef::new(&ttf_bytes) else {
         return Err(TaRsLoaderStatus::InvalidArgument);
     };

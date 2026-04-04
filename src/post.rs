@@ -1,4 +1,3 @@
-use crate::tablestore::TableStore;
 use write_fonts::{
     dump_table,
     from_obj::ToOwnedTable,
@@ -7,19 +6,21 @@ use write_fonts::{
     types::{GlyphId16, Tag, Version16Dot16},
 };
 
-pub(crate) fn update_post(tablestore: &mut TableStore) {
-    if tablestore.get_processed(Tag::new(b"post")) {
+use crate::c_font::Font;
+
+pub(crate) fn update_post(font: &mut Font) {
+    if font.get_processed(Tag::new(b"post")) {
         println!("`post` table alread processed, skipping update");
         return;
     }
-    if let Some(table) = tablestore.get_table(Tag::new(b"post")) {
+    if let Some(table) = font.get_table(Tag::new(b"post")) {
         let bytes = FontData::new(table);
         let read_table = write_fonts::read::tables::post::Post::read(bytes).unwrap();
         let mut write_table: Post = read_table.to_owned_table();
         match write_table.version {
             Version16Dot16::VERSION_2_5 => {
                 write_table.num_glyphs = write_table.num_glyphs.map(|x| x + 1);
-                tablestore.update_table(Tag::new(b"post"), &dump_table(&write_table).unwrap());
+                font.update_table(Tag::new(b"post"), &dump_table(&write_table).unwrap());
             }
             Version16Dot16::VERSION_2_0 => {
                 // Gather old string names
@@ -36,7 +37,7 @@ pub(crate) fn update_post(tablestore: &mut TableStore) {
                 new_table.max_mem_type1 = read_table.max_mem_type1();
                 new_table.max_mem_type42 = read_table.max_mem_type42();
                 new_table.max_mem_type1 = read_table.max_mem_type1();
-                tablestore.update_table(Tag::new(b"post"), &dump_table(&new_table).unwrap());
+                font.update_table(Tag::new(b"post"), &dump_table(&new_table).unwrap());
             }
             _ => {}
         }

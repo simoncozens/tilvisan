@@ -1,4 +1,7 @@
-use crate::{c_font::TA_STYLE_MAX, tablestore::TableStore, AutohintError};
+use crate::{
+    c_font::{Font, TA_STYLE_MAX},
+    AutohintError,
+};
 use skrifa::{
     outline::{GlyphStyles, STYLE_CLASSES},
     raw::{
@@ -116,7 +119,7 @@ pub(crate) fn ta_style_to_skrifa_style(ta_style: usize) -> Option<usize> {
 }
 
 pub(crate) fn compute_style_coverage(
-    table_store: &TableStore,
+    font: &Font,
     glyph_count: usize,
     fallback_style: u16,
     debug_dump: bool,
@@ -197,7 +200,7 @@ pub(crate) fn compute_style_coverage(
         }
     }
 
-    let ttf_bytes = table_store.build_ttf();
+    let ttf_bytes = font.build_ttf();
     let font = FontRef::new(&ttf_bytes)?;
     let outlines = font.outline_glyphs();
     let styles = GlyphStyles::new(&outlines);
