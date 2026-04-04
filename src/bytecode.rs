@@ -3,7 +3,6 @@ pub struct Bytecode(pub(crate) Vec<u8>);
 use crate::opcodes::*;
 
 pub(crate) const CONTROL_DELTA_PPEM_MIN: u8 = 6;
-// pub(crate) const CONTROL_DELTA_PPEM_MAX: u8 = 53;
 
 pub(crate) fn high(x: u32) -> u8 {
     (((x) & 0xFF00) >> 8) as u8

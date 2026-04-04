@@ -28,7 +28,7 @@ pub struct TaRsStyleMetrics {
     pub blue_adjustment: Vec<u8>,
 }
 
-pub(crate) fn ta_rs_build_cvt_table_store(
+pub(crate) fn build_cvt_table_store(
     font: &mut Font,
     sfnt_idx: usize,
 ) -> Result<(), AutohintError> {

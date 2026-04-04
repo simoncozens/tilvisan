@@ -171,7 +171,7 @@ pub(crate) fn delta_rules_for_glyph(
         .unwrap_or_default()
 }
 
-pub(crate) fn ta_rs_control_apply_coverage(font: &mut Font, sfnt_idx: usize) {
+pub(crate) fn control_apply_coverage(font: &mut Font, sfnt_idx: usize) {
     let Some(index) = font.control.index() else {
         return;
     };
@@ -199,7 +199,7 @@ pub(crate) fn ta_rs_control_apply_coverage(font: &mut Font, sfnt_idx: usize) {
     }
 }
 
-pub(crate) fn ta_rs_control_build_tree_rs(font: &mut Font) -> Result<(), AutohintError> {
+pub(crate) fn control_build_tree_rs(font: &mut Font) -> Result<(), AutohintError> {
     font.control.index = None;
 
     if font.control.entries.is_empty() {

@@ -843,21 +843,21 @@ pub(crate) fn compute_hint_plan_rs(
 
 // ── Serialization: glyf/loca table building ──────────────────────────────────
 
-pub(crate) fn ta_rs_split_glyf_table(
+pub(crate) fn split_glyf_table(
     font: &mut Font,
     sfnt_idx: usize,
 ) -> Result<(), AutohintError> {
     build_glyf_data_common(font, sfnt_idx, 0)
 }
 
-pub(crate) fn ta_rs_create_glyf_data(
+pub(crate) fn create_glyf_data(
     font: &mut Font,
     sfnt_idx: usize,
 ) -> Result<(), AutohintError> {
     build_glyf_data_common(font, sfnt_idx, 1)
 }
 
-pub(crate) fn ta_rs_handle_coverage(font: &mut Font, sfnt_idx: usize) -> Result<(), AutohintError> {
+pub(crate) fn handle_coverage(font: &mut Font, sfnt_idx: usize) -> Result<(), AutohintError> {
     let num_sfnts = font.num_sfnts();
     if sfnt_idx >= num_sfnts || sfnt_idx >= font.glyf_ptrs_owned.len() {
         return Err(AutohintError::InvalidTable);
@@ -907,7 +907,7 @@ pub(crate) fn ta_rs_handle_coverage(font: &mut Font, sfnt_idx: usize) -> Result<
     Ok(())
 }
 
-pub(crate) fn ta_rs_build_glyf_table(
+pub(crate) fn build_glyf_table(
     font: &mut Font,
     sfnt_idx: usize,
     build_glyph_instructions: TaRsBuildGlyphInstructions,
@@ -973,7 +973,7 @@ pub(crate) fn ta_rs_build_glyf_table(
     Ok(())
 }
 
-pub(crate) fn ta_rs_adjust_coverage(font: &mut Font, sfnt_idx: usize) {
+pub(crate) fn adjust_coverage(font: &mut Font, sfnt_idx: usize) {
     let num_sfnts = font.num_sfnts();
     if sfnt_idx >= num_sfnts || sfnt_idx >= font.glyf_ptrs_owned.len() {
         return;

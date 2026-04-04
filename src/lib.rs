@@ -5,7 +5,6 @@ mod c_font;
 mod control;
 mod control_index;
 mod cvt;
-mod emitter;
 mod error;
 pub mod features;
 mod fpgm;

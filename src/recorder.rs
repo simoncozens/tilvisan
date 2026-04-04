@@ -2,18 +2,19 @@ use std::collections::BTreeSet;
 
 use skrifa::GlyphId;
 
-use crate::bytecode::Bytecode;
-use crate::c_font::{Font, MISSING};
-use crate::emitter::{emit_hints_records, TaRsBytecodeHintsRecord};
-use crate::glyf::{extract_unscaled_outline, ScaledGlyph};
-use crate::loader::build_subglyph_shifter_bytecode;
-use crate::logger::set_debug_logging;
-use crate::opcodes::{
-    CvtLocations, FunctionNumbers, StorageAreaLocations, CALL, CVT_SCALING_VALUE_OFFSET, PUSHB_2,
-    WCVTP,
+use crate::{
+    bytecode::Bytecode,
+    c_font::{Font, MISSING},
+    glyf::{extract_unscaled_outline, ScaledGlyph},
+    loader::build_subglyph_shifter_bytecode,
+    logger::set_debug_logging,
+    opcodes::{
+        CvtLocations, FunctionNumbers, StorageAreaLocations, CALL, CVT_SCALING_VALUE_OFFSET, EIF,
+        ELSE, IF, LT, MPPEM, NPUSHB, NPUSHW, PUSHB_1, PUSHB_2, PUSHW_1, WCVTP,
+    },
+    tablestore::TableStore,
+    AutohintError,
 };
-use crate::tablestore::TableStore;
-use crate::AutohintError;
 use skrifa::outline::{ExportedHintPlan, ExportedHintRecord};
 
 use crate::glyf::TA_STYLE_MAX;
@@ -765,7 +766,7 @@ impl TaRsRecorderMarshaledAction {
 
 /// Build point-hints bytecode and store the result into the recorder's
 /// internal hints-record buffer, replacing `hints_record_num_actions`.
-fn ta_rs_recorder_build_point_hints(
+fn recorder_build_point_hints(
     recorder: &mut RustRecorder,
     hint_composites: bool,
 ) -> Result<(), AutohintError> {
@@ -778,7 +779,7 @@ fn ta_rs_recorder_build_point_hints(
 /// Clear the hints-record bytecode buffer and reset the action counter,
 /// preserving `hints_record_size`.  Called before building point hints for
 /// the same ppem value whose action hints were already recorded.
-fn ta_rs_recorder_reset_hints_record(recorder: &mut RustRecorder) {
+fn recorder_reset_hints_record(recorder: &mut RustRecorder) {
     recorder.hints_record_buffer = Bytecode::new();
     recorder.hints_record_num_actions = 0;
 }
@@ -943,7 +944,7 @@ fn marshal_action_fields(
     Some(m)
 }
 
-fn ta_rs_hints_recorder_marshal_and_emit_action(
+fn hints_recorder_marshal_and_emit_action(
     recorder: &RustRecorder,
     action: u32,
     arg1_edge_idx: u16,
@@ -1033,7 +1034,7 @@ fn ta_rs_hints_recorder_marshal_and_emit_action(
     Ok(Bytecode(emitted))
 }
 
-fn ta_rs_recorder_replay_process_hint_record(
+fn recorder_replay_process_hint_record(
     recorder: &mut RustRecorder,
     rec: &ExportedHintRecord,
     glyph_num_points: u32,
@@ -1171,7 +1172,7 @@ fn ta_rs_recorder_replay_process_hint_record(
         }
     }
 
-    let emitted = ta_rs_hints_recorder_marshal_and_emit_action(
+    let emitted = hints_recorder_marshal_and_emit_action(
         recorder,
         rec.action as u32,
         rec.edge_ix,
@@ -1190,7 +1191,7 @@ fn ta_rs_recorder_replay_process_hint_record(
     })
 }
 
-fn ta_rs_recorder_record_hints_for_ppem(
+fn recorder_record_hints_for_ppem(
     recorder: &mut RustRecorder,
     font: &Font,
     sfnt_idx: usize,
@@ -1219,7 +1220,7 @@ fn ta_rs_recorder_record_hints_for_ppem(
         ppem,
     )?;
 
-    if !ta_rs_recorder_build_replay_axis_from_plan(recorder, &rust_plan) {
+    if !recorder_build_replay_axis_from_plan(recorder, &rust_plan) {
         return Err(AutohintError::UnportedError(0x50));
     }
 
@@ -1232,7 +1233,7 @@ fn ta_rs_recorder_record_hints_for_ppem(
     let top_to_bottom_hinting = crate::style_metadata::script_hints_top_to_bottom(ta_style);
 
     for rec in &rust_plan.records {
-        let result = ta_rs_recorder_replay_process_hint_record(
+        let result = recorder_replay_process_hint_record(
             recorder,
             rec,
             glyph_num_points,
@@ -1259,7 +1260,7 @@ fn ta_rs_recorder_record_hints_for_ppem(
     Ok(())
 }
 
-fn ta_rs_recorder_build_replay_axis_from_plan(
+fn recorder_build_replay_axis_from_plan(
     recorder: &mut RustRecorder,
     plan: &ExportedHintPlan,
 ) -> bool {
@@ -1453,22 +1454,102 @@ impl HintsRecordArray {
     }
 
     fn emit(&self, optimize: bool) -> Result<(Bytecode, u16), ()> {
-        // Build a temporary slice of TaRsBytecodeHintsRecord pointing into
-        // the stored Vecs; the `tmp` only lives for this call, so the raw
-        // pointers are valid throughout.
-        let tmp: Vec<TaRsBytecodeHintsRecord> = self
-            .records
-            .iter()
-            .map(|r| TaRsBytecodeHintsRecord {
-                size: r.size,
-                buf: Bytecode(r.buf.clone()),
-            })
-            .collect();
-        emit_hints_records(&tmp, optimize)
+        let mut out = Bytecode::new();
+        let mut max_stack_elements = 0u16;
+
+        if self.records.is_empty() {
+            return Ok((out, 0));
+        }
+
+        for i in 0..(self.records.len() - 1) {
+            let curr = &self.records[i];
+            let next = &self.records[i + 1];
+
+            out.push_u8(MPPEM);
+            if next.size > 0xFF {
+                out.push_u8(PUSHW_1);
+
+                out.push_word(next.size);
+            } else {
+                out.push_u8(PUSHB_1);
+                out.push_u8(next.size as u8);
+            }
+            out.push_u8(LT);
+            out.push_u8(IF);
+
+            let n = emit_hints_record_into(&mut out, curr.buf.as_slice(), optimize)?;
+            if n > max_stack_elements {
+                max_stack_elements = n;
+            }
+
+            out.push_u8(ELSE);
+        }
+
+        let last = &self.records[self.records.len() - 1];
+        let n = emit_hints_record_into(&mut out, last.buf.as_slice(), optimize)?;
+        if n > max_stack_elements {
+            max_stack_elements = n;
+        }
+
+        out.extend(std::iter::repeat_n(EIF, self.records.len() - 1));
+
+        Ok((out, max_stack_elements))
     }
 }
 
-pub(crate) fn ta_rs_build_glyph_instructions(
+fn emit_hints_record_into(out: &mut Bytecode, words_be: &[u8], optimize: bool) -> Result<u16, ()> {
+    if !words_be.len().is_multiple_of(2) {
+        return Err(());
+    }
+
+    let num_arguments = words_be.len() / 2;
+    let mut need_words = false;
+    for i in (0..words_be.len()).step_by(2) {
+        if words_be[i] != 0 {
+            need_words = true;
+            break;
+        }
+    }
+
+    let mut i = 0usize;
+    while i < num_arguments {
+        let num_args = (num_arguments - i).min(255);
+        if need_words {
+            if optimize && num_args <= 8 {
+                out.push_u8(PUSHW_1 - 1 + num_args as u8);
+            } else {
+                out.push_u8(NPUSHW);
+                out.push_u8(num_args as u8);
+            }
+
+            for j in 0..num_args {
+                let src_word_idx = num_arguments - 1 - (i + j);
+                let byte_ix = src_word_idx * 2;
+                out.push_u8(words_be[byte_ix]);
+                out.push_u8(words_be[byte_ix + 1]);
+            }
+        } else {
+            if optimize && num_args <= 8 {
+                out.push_u8(PUSHB_1 - 1 + num_args as u8);
+            } else {
+                out.push_u8(NPUSHB);
+                out.push_u8(num_args as u8);
+            }
+
+            for j in 0..num_args {
+                let src_word_idx = num_arguments - 1 - (i + j);
+                let byte_ix = src_word_idx * 2;
+                out.push_u8(words_be[byte_ix + 1]);
+            }
+        }
+
+        i += 255;
+    }
+
+    Ok(u16::try_from(num_arguments).unwrap_or(u16::MAX))
+}
+
+pub(crate) fn build_glyph_instructions(
     font: &mut Font,
     sfnt_idx: usize,
     idx: GlyphId,
@@ -1550,7 +1631,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
             use_gstyle_data = false;
         } else if ta_style == font_ref.fallback_style as usize {
             let recorder = RustRecorder::new(&glyph_ref);
-            let (emitted, num_args) = ta_rs_build_glyph_scaler_bytecode(
+            let (emitted, num_args) = build_glyph_scaler_bytecode(
                 &recorder,
                 &font_ref.table_store,
                 sfnt_table_store_sfnt_idx,
@@ -1582,7 +1663,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
                     log_debug_heading(&format!("size {}", size), '-');
                 }
 
-                ta_rs_recorder_record_hints_for_ppem(
+                recorder_record_hints_for_ppem(
                     &mut recorder,
                     font_ref,
                     sfnt_idx,
@@ -1603,8 +1684,8 @@ pub(crate) fn ta_rs_build_glyph_instructions(
                     )
                 }
 
-                ta_rs_recorder_reset_hints_record(&mut recorder);
-                ta_rs_recorder_build_point_hints(&mut recorder, font_ref.hint_composites)?;
+                recorder_reset_hints_record(&mut recorder);
+                recorder_build_point_hints(&mut recorder, font_ref.hint_composites)?;
 
                 if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
                     point_hints_records.push(
@@ -1616,7 +1697,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
             }
 
             if action_hints_records.is_empty_singleton() {
-                let (emitted, num_args) = ta_rs_build_glyph_scaler_bytecode(
+                let (emitted, num_args) = build_glyph_scaler_bytecode(
                     &recorder,
                     &font_ref.table_store,
                     sfnt_table_store_sfnt_idx,
@@ -1687,7 +1768,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
 
                 let style_id = glyf_style_ids[ta_style];
                 let pos2 = bytecode.as_slice().len();
-                let segment_result = ta_rs_build_glyph_segments_bytecode(
+                let segment_result = build_glyph_segments_bytecode(
                     &recorder,
                     &font_ref.table_store,
                     sfnt_table_store_sfnt_idx,
@@ -1736,7 +1817,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
                 log_debug_heading(&format!("size {}", size), '-');
             }
 
-            ta_rs_recorder_record_hints_for_ppem(
+            recorder_record_hints_for_ppem(
                 &mut recorder,
                 font_ref,
                 sfnt_idx,
@@ -1757,8 +1838,8 @@ pub(crate) fn ta_rs_build_glyph_instructions(
                 )
             }
 
-            ta_rs_recorder_reset_hints_record(&mut recorder);
-            ta_rs_recorder_build_point_hints(&mut recorder, font_ref.hint_composites)?;
+            recorder_reset_hints_record(&mut recorder);
+            recorder_build_point_hints(&mut recorder, font_ref.hint_composites)?;
 
             if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
                 point_hints_records.push(
@@ -1770,7 +1851,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
         }
 
         if action_hints_records.is_empty_singleton() {
-            let (emitted, num_args) = ta_rs_build_glyph_scaler_bytecode(
+            let (emitted, num_args) = build_glyph_scaler_bytecode(
                 &recorder,
                 &font_ref.table_store,
                 sfnt_table_store_sfnt_idx,
@@ -1840,7 +1921,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
 
             let style_id = glyf_style_ids[ta_style];
             let pos2 = bytecode.as_slice().len();
-            let segment_result = ta_rs_build_glyph_segments_bytecode(
+            let segment_result = build_glyph_segments_bytecode(
                 &recorder,
                 &font_ref.table_store,
                 sfnt_table_store_sfnt_idx,
@@ -1879,7 +1960,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
     }
 
     if font_ref.control.has_index() {
-        let (emitted, max_stack) = crate::c_api::ta_rs_build_delta_exceptions(
+        let (emitted, max_stack) = crate::c_api::build_delta_exceptions(
             font_ref.control.index(),
             sfnt_idx,
             idx,
@@ -1924,7 +2005,7 @@ pub(crate) fn ta_rs_build_glyph_instructions(
 ///
 /// Returns 0 on success, 0x23 (FT_Err_Invalid_Table) on invalid input/data,
 /// 0x50 (FT_Err_Out_Of_Memory) on allocation failure.
-fn ta_rs_build_glyph_scaler_bytecode(
+fn build_glyph_scaler_bytecode(
     recorder: &RustRecorder,
     table_store: &TableStore,
     sfnt_idx: usize,
@@ -2016,7 +2097,7 @@ fn ta_rs_build_glyph_scaler_bytecode(
 ///
 /// `first_indices` and `last_indices` contain active segments in traversal
 /// order (already filtered by segment map).
-fn ta_rs_build_glyph_segments_bytecode(
+fn build_glyph_segments_bytecode(
     recorder: &RustRecorder,
     table_store: &crate::tablestore::TableStore,
     sfnt_idx: usize,

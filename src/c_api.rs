@@ -55,7 +55,7 @@ fn build_delta_exception_into(
     }
 }
 
-pub(crate) fn ta_rs_build_delta_exceptions(
+pub(crate) fn build_delta_exceptions(
     index: Option<&ControlIndex>,
     font_idx: usize,
     glyph_idx: GlyphId,

@@ -12,7 +12,7 @@ use crate::control_index::ResolvedControlEntry;
 use crate::intset::{IntSet, RangeExpr};
 use crate::maxp::sfnt_has_ttfautohint_glyph;
 use crate::prep::build_prep_table;
-use crate::recorder::ta_rs_build_glyph_instructions;
+use crate::recorder::build_glyph_instructions;
 use crate::tablestore::TableStore;
 use crate::Args;
 use crate::{info::InfoData, AutohintError};
@@ -32,7 +32,7 @@ fn ta_sfnt_build_glyph_instructions_cb(
     sfnt_idx: usize,
     idx: GlyphId,
 ) -> Result<c_int, AutohintError> {
-    ta_rs_build_glyph_instructions(font, sfnt_idx, idx)?;
+    build_glyph_instructions(font, sfnt_idx, idx)?;
     Ok(0)
 }
 
@@ -56,7 +56,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
         sfnt_ref.glyph_styles = vec![0; glyph_count as usize];
     }
 
-    crate::control_index::ta_rs_control_build_tree_rs(font)?;
+    crate::control_index::control_build_tree_rs(font)?;
 
     for i in 0..font.num_sfnts() {
         let sfnt_table_store_idx = font.sfnts_owned[i].table_store_sfnt_idx;
@@ -80,15 +80,15 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
         }
 
         if font.dehint {
-            crate::glyf::ta_rs_split_glyf_table(font, i)?;
+            crate::glyf::split_glyf_table(font, i)?;
         } else {
             if font.adjust_subglyphs {
-                crate::glyf::ta_rs_create_glyf_data(font, i)?;
+                crate::glyf::create_glyf_data(font, i)?;
             } else {
-                crate::glyf::ta_rs_split_glyf_table(font, i)?;
+                crate::glyf::split_glyf_table(font, i)?;
             }
 
-            crate::glyf::ta_rs_handle_coverage(font, i)?;
+            crate::glyf::handle_coverage(font, i)?;
 
             font.sfnts_owned[i].increase_x_height = font.increase_x_height;
         }
@@ -96,10 +96,10 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
 
     if !font.dehint {
         for i in 0..font.num_sfnts() {
-            crate::glyf::ta_rs_adjust_coverage(font, i);
+            crate::glyf::adjust_coverage(font, i);
         }
         for i in 0..font.num_sfnts() {
-            crate::control_index::ta_rs_control_apply_coverage(font, i);
+            crate::control_index::control_apply_coverage(font, i);
         }
     }
 
@@ -109,7 +109,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
         crate::gasp::update_gasp(&mut font.table_store, sfnt_table_store_idx);
 
         if !font.dehint {
-            crate::cvt::ta_rs_build_cvt_table_store(font, i)?;
+            crate::cvt::build_cvt_table_store(font, i)?;
 
             let glyf_data = font
                 .glyf_ptrs_owned
@@ -139,7 +139,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
             font.glyf_ptrs_owned[i] = Some(glyf_data);
         }
 
-        crate::glyf::ta_rs_build_glyf_table(font, i, Some(ta_sfnt_build_glyph_instructions_cb))?;
+        crate::glyf::build_glyf_table(font, i, Some(ta_sfnt_build_glyph_instructions_cb))?;
     }
 
     for i in 0..font.num_sfnts() {
