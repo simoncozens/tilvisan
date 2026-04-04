@@ -155,10 +155,10 @@ fn run_ttfautohint(input_file: &Path, output_file: &Path) {
 
     let call = TtfautohintCall::from_args(&args)
         .unwrap_or_else(|e| panic!("Failed to construct call for {input_file:?}: {e}"));
-    let mut info_data = InfoData::from_args(args)
+    let mut info_data = InfoData::from_args(&args)
         .unwrap_or_else(|e| panic!("Failed to construct info data for {input_file:?}: {e}"));
 
-    let output_bytes = ttfautohint(&call, &mut info_data)
+    let output_bytes = ttfautohint(&call, &args, &mut info_data)
         .unwrap_or_else(|e| panic!("ttfautohint failed on file {input_file:?}: {e}"));
 
     fs::write(output_file, output_bytes)

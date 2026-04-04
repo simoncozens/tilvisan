@@ -1580,13 +1580,16 @@ pub(crate) fn build_glyph_instructions(
 
     let sfnt_table_store_sfnt_idx = sfnt_ref.table_store_sfnt_idx;
     let gstyle = sfnt_ref.glyph_styles[idx_usize];
+    let fallback_style = crate::orchestrate::fallback_style_for_script(
+        crate::orchestrate::script_to_index(&font_ref.args.fallback_script),
+    ) as usize;
     let mut sfnt_max_storage = sfnt_ref.max_storage;
     let mut sfnt_max_stack_elements = sfnt_ref.max_stack_elements;
     let mut sfnt_max_twilight_points = sfnt_ref.max_twilight_points;
     let mut sfnt_max_instructions = sfnt_ref.max_instructions;
 
-    set_debug_logging(font_ref.debug);
-    if font_ref.debug {
+    set_debug_logging(font_ref.args.debug);
+    if font_ref.args.debug {
         log_debug_heading(&format!("glyph {}", idx), '=');
     }
 
@@ -1626,17 +1629,17 @@ pub(crate) fn build_glyph_instructions(
             bytecode.extend(subglyph);
         }
         use_gstyle_data = false;
-    } else if font_ref.fallback_scaling {
+    } else if font_ref.args.fallback_scaling {
         if ta_style == TA_STYLE_NONE_DFLT {
             use_gstyle_data = false;
-        } else if ta_style == font_ref.fallback_style as usize {
+        } else if ta_style == fallback_style {
             let recorder = RustRecorder::new(&glyph_ref);
             let (emitted, num_args) = build_glyph_scaler_bytecode(
                 &recorder,
                 &font_ref.table_store,
                 sfnt_table_store_sfnt_idx,
                 idx,
-                font_ref.hint_composites,
+                font_ref.args.composites,
             )?;
             bytecode.extend(emitted);
 
@@ -1656,10 +1659,10 @@ pub(crate) fn build_glyph_instructions(
             let mut action_hints_records = HintsRecordArray::new();
             let mut point_hints_records = HintsRecordArray::new();
 
-            for size in font_ref.hinting_range_min..=font_ref.hinting_range_max {
+            for size in font_ref.args.hinting_range_min..=font_ref.args.hinting_range_max {
                 recorder.clear();
 
-                if font_ref.debug {
+                if font_ref.args.debug {
                     log_debug_heading(&format!("size {}", size), '-');
                 }
 
@@ -1685,7 +1688,7 @@ pub(crate) fn build_glyph_instructions(
                 }
 
                 recorder_reset_hints_record(&mut recorder);
-                recorder_build_point_hints(&mut recorder, font_ref.hint_composites)?;
+                recorder_build_point_hints(&mut recorder, font_ref.args.composites)?;
 
                 if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
                     point_hints_records.push(
@@ -1702,7 +1705,7 @@ pub(crate) fn build_glyph_instructions(
                     &font_ref.table_store,
                     sfnt_table_store_sfnt_idx,
                     idx,
-                    font_ref.hint_composites,
+                    font_ref.args.composites,
                 )?;
                 bytecode.extend(emitted);
 
@@ -1773,7 +1776,7 @@ pub(crate) fn build_glyph_instructions(
                     &font_ref.table_store,
                     sfnt_table_store_sfnt_idx,
                     idx,
-                    font_ref.hint_composites,
+                    font_ref.args.composites,
                     style_id,
                     &first_indices,
                     &last_indices,
@@ -1810,10 +1813,10 @@ pub(crate) fn build_glyph_instructions(
         let mut action_hints_records = HintsRecordArray::new();
         let mut point_hints_records = HintsRecordArray::new();
 
-        for size in font_ref.hinting_range_min..=font_ref.hinting_range_max {
+        for size in font_ref.args.hinting_range_min..=font_ref.args.hinting_range_max {
             recorder.clear();
 
-            if font_ref.debug {
+            if font_ref.args.debug {
                 log_debug_heading(&format!("size {}", size), '-');
             }
 
@@ -1839,7 +1842,7 @@ pub(crate) fn build_glyph_instructions(
             }
 
             recorder_reset_hints_record(&mut recorder);
-            recorder_build_point_hints(&mut recorder, font_ref.hint_composites)?;
+            recorder_build_point_hints(&mut recorder, font_ref.args.composites)?;
 
             if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
                 point_hints_records.push(
@@ -1856,7 +1859,7 @@ pub(crate) fn build_glyph_instructions(
                 &font_ref.table_store,
                 sfnt_table_store_sfnt_idx,
                 idx,
-                font_ref.hint_composites,
+                font_ref.args.composites,
             )?;
             bytecode.extend(emitted);
 
@@ -1926,7 +1929,7 @@ pub(crate) fn build_glyph_instructions(
                 &font_ref.table_store,
                 sfnt_table_store_sfnt_idx,
                 idx,
-                font_ref.hint_composites,
+                font_ref.args.composites,
                 style_id,
                 &first_indices,
                 &last_indices,

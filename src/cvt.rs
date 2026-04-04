@@ -307,7 +307,9 @@ fn build_cvt_table_rs(font: &mut Font, sfnt_idx: usize) -> Result<CvtBlobData, A
 
     let sfnt_table_store_idx = font.sfnts_owned[sfnt_idx].table_store_sfnt_idx;
     let sample_glyphs = font.sfnts_owned[sfnt_idx].sample_glyphs;
-    let fallback_style = font.fallback_style;
+    let fallback_style = crate::orchestrate::fallback_style_for_script(
+        crate::orchestrate::script_to_index(&font.args.fallback_script),
+    );
 
     let mut style_metrics: [TaRsStyleMetrics; TA_STYLE_MAX] =
         core::array::from_fn(|_| TaRsStyleMetrics::default());
@@ -340,7 +342,7 @@ fn build_cvt_table_rs(font: &mut Font, sfnt_idx: usize) -> Result<CvtBlobData, A
 
     let blob_data = match build_cvt_blob_rs(
         &style_metrics,
-        font.windows_compatibility,
+        font.args.windows_compatibility,
         units_per_em as u16,
     ) {
         Ok(blob) => blob,
@@ -349,7 +351,7 @@ fn build_cvt_table_rs(font: &mut Font, sfnt_idx: usize) -> Result<CvtBlobData, A
         }
     };
 
-    if blob_data.num_used_styles == 0 && !font.symbol {
+    if blob_data.num_used_styles == 0 && !font.args.symbol {
         return Err(AutohintError::UnportedError(TA_ERR_MISSING_GLYPH as i32));
     }
 

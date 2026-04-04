@@ -4,9 +4,10 @@ use skrifa::{
 };
 use write_fonts::{dump_table, from_obj::ToOwnedTable, tables::name::Name};
 
-use crate::tablestore::TableStore;
 use crate::{
+    args::Args,
     info::{process_name_post, process_name_record, InfoData},
+    tablestore::TableStore,
     AutohintError,
 };
 
@@ -14,6 +15,7 @@ pub(crate) fn update_name_table(
     tablestore: &mut TableStore,
     sfnt_index: usize,
     idata: &mut InfoData,
+    args: &Args,
 ) -> Result<(), AutohintError> {
     if tablestore.get_processed(sfnt_index, Tag::new(b"name")) {
         return Ok(());
@@ -49,11 +51,12 @@ pub(crate) fn update_name_table(
             idx,
             &mut record_bufs[idx],
             idata,
+            args,
         );
     }
 
     // Apply family-suffix post-processing.
-    process_name_post(idata, &mut record_bufs);
+    process_name_post(idata, &mut record_bufs, &args.family_suffix);
 
     // Write the (possibly modified) buffers back into the table.
     for (record, buf) in write_table.name_record.iter_mut().zip(record_bufs.iter()) {

@@ -18,12 +18,12 @@ fn main() -> io::Result<()> {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     });
-    let mut idata = InfoData::from_args(args).unwrap_or_else(|e| {
+    let mut idata = InfoData::from_args(&args).unwrap_or_else(|e| {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     });
 
-    let output_bytes = match ttfautohint(&call, &mut idata) {
+    let output_bytes = match ttfautohint(&call, &args, &mut idata) {
         Ok(bytes) => bytes,
         Err(e) => {
             eprintln!("Error: {}", e);

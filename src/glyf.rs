@@ -33,6 +33,12 @@ const TA_STYLE_UNASSIGNED: u16 = TA_STYLE_MASK;
 type TaRsBuildGlyphInstructions =
     Option<fn(&mut Font, usize, GlyphId) -> Result<i32, AutohintError>>;
 
+fn fallback_style(font: &Font) -> u16 {
+    crate::orchestrate::fallback_style_for_script(crate::orchestrate::script_to_index(
+        &font.args.fallback_script,
+    )) as u16
+}
+
 #[derive(Copy, Clone, Default)]
 pub struct TaRsOutlinePoint {
     pub x: i32,
@@ -168,7 +174,7 @@ fn build_glyf_data_common(
         &mut font.table_store,
         table_store_sfnt_idx,
         use_scaler,
-        font.hint_composites,
+        font.args.composites,
         sfnt_max_components,
     ) {
         Ok(result) => result,
@@ -178,7 +184,7 @@ fn build_glyf_data_common(
     data.glyphs = build_result.glyphs;
     data.num_glyphs = build_result.num_glyphs;
 
-    if font.hint_composites && sfnt_max_components != 0 {
+    if font.args.composites && sfnt_max_components != 0 {
         let sfnt_ref = &mut font.sfnts_owned[sfnt_idx];
         sfnt_ref.max_components += 1;
         sfnt_ref.max_composite_points = build_result.max_composite_points;
@@ -873,7 +879,7 @@ pub(crate) fn handle_coverage(font: &mut Font, sfnt_idx: usize) -> Result<(), Au
         table_store_sfnt_idx,
         glyph_count as usize,
         TA_STYLE_UNASSIGNED,
-        font.debug,
+        font.args.debug,
         sfnt_idx as i32,
         num_sfnts as i32,
     )?;
@@ -935,13 +941,13 @@ pub(crate) fn build_glyf_table(
         return Ok(());
     }
 
-    if !font.dehint {
+    if !font.args.dehint {
         let Some(build_glyph_instructions) = build_glyph_instructions else {
             return Err(AutohintError::InvalidTable);
         };
 
         let mut loop_count = data_num_glyphs as u32;
-        if sfnt_max_components != 0 && font.hint_composites {
+        if sfnt_max_components != 0 && font.args.composites {
             loop_count = loop_count.saturating_sub(1);
         }
 
@@ -979,6 +985,8 @@ pub(crate) fn adjust_coverage(font: &mut Font, sfnt_idx: usize) {
         return;
     }
 
+    let fallback_style = fallback_style(font);
+
     let data_ref = match font
         .glyf_ptrs_owned
         .get_mut(sfnt_idx)
@@ -993,11 +1001,11 @@ pub(crate) fn adjust_coverage(font: &mut Font, sfnt_idx: usize) {
 
     let glyph_styles = &data_ref.master_glyph_styles;
 
-    set_debug_logging(font.debug);
-    if font.debug {
+    set_debug_logging(font.args.debug);
+    if font.args.debug {
         log_unassigned_glyphs(
             glyph_styles,
-            font.fallback_style as usize,
+            fallback_style as usize,
             sfnt_idx,
             num_sfnts,
         );
@@ -1006,7 +1014,7 @@ pub(crate) fn adjust_coverage(font: &mut Font, sfnt_idx: usize) {
     for style_bits in data_ref.master_glyph_styles.iter_mut() {
         if (*style_bits & TA_STYLE_MASK) == TA_STYLE_UNASSIGNED {
             *style_bits &= !TA_STYLE_MASK;
-            *style_bits |= font.fallback_style as u16;
+            *style_bits |= fallback_style;
         }
     }
 

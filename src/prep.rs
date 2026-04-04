@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals)]
 use crate::{
     bytecode::{high, low, Bytecode, CONTROL_DELTA_PPEM_MIN},
-    c_font::Font,
+    c_font::{Font, TA_PROP_INCREASE_X_HEIGHT_MIN},
     glyf::{GlyfData, TA_STYLE_MAX},
     intset::IntSet,
     opcodes::*,
@@ -110,21 +110,32 @@ pub(crate) fn build_prep_table(
 
     let num_used_styles = glyf_data.num_used_styles as u8;
     let mut num_stack_elements = None;
-    let windows_compatibility = font.windows_compatibility;
+    let windows_compatibility = font.args.windows_compatibility;
+    let x_height_snapping_exceptions = if font.args.x_height_snapping_exceptions.is_empty() {
+        None
+    } else {
+        crate::orchestrate::parse_number_set_to_intset(
+            &font.args.x_height_snapping_exceptions,
+            TA_PROP_INCREASE_X_HEIGHT_MIN,
+            0x7FFF,
+        )
+    };
+    let (gray_stem_width_mode, gdi_cleartype_stem_width_mode, dw_cleartype_stem_width_mode) =
+        crate::orchestrate::parse_stem_width_mode_values(&font.args.stem_width_mode)?;
     let mut bytecode = Bytecode::new();
-    if let Some(x_height_snapping_exceptions) = font.x_height_snapping_exceptions.as_ref() {
+    if let Some(x_height_snapping_exceptions) = x_height_snapping_exceptions.as_ref() {
         let (bc, nse) = build_number_set(x_height_snapping_exceptions);
         bytecode.extend(bc);
         num_stack_elements = Some(nse);
     }
-    if font.hinting_limit > 0 {
+    if font.args.hinting_limit > 0 {
         bytecode.extend(PREP_hinting_limit_a);
-        bytecode.push_u8(high(font.hinting_limit));
-        bytecode.push_u8(low(font.hinting_limit));
+        bytecode.push_u8(high(font.args.hinting_limit));
+        bytecode.push_u8(low(font.args.hinting_limit));
         bytecode.extend(PREP_hinting_limit_b);
     }
     bytecode.extend(PREP_store_funits_to_pixels);
-    if font.x_height_snapping_exceptions.is_some() {
+    if x_height_snapping_exceptions.is_some() {
         bytecode.extend(PREP_test_exception_a);
     }
     bytecode.extend(PREP_align_x_height_a);
@@ -187,7 +198,12 @@ pub(crate) fn build_prep_table(
 
         let blues_size = glyf_data.cvt_blues_size(i);
         let num_blues = if blues_size > 1 {
-            blues_size - if font.windows_compatibility { 2 } else { 0 }
+            blues_size
+                - if font.args.windows_compatibility {
+                    2
+                } else {
+                    0
+                }
         } else {
             0
         };
@@ -196,7 +212,7 @@ pub(crate) fn build_prep_table(
     bytecode.push_u8(num_used_styles);
     bytecode.extend(PREP_loop_cvt_c);
 
-    if font.x_height_snapping_exceptions.is_some() {
+    if x_height_snapping_exceptions.is_some() {
         bytecode.extend(PREP_test_exception_b);
     }
     bytecode.extend(PREP_store_vwidth_data_a);
@@ -242,9 +258,9 @@ pub(crate) fn build_prep_table(
     bytecode.push_u8(low(num_used_styles.into()));
     bytecode.extend(PREP_store_vwidth_data_e);
 
-    let gray_mode_word = font.gray_stem_width_mode.wrapping_mul(100) as u16;
-    let gdi_mode_word = font.gdi_cleartype_stem_width_mode.wrapping_mul(100) as u16;
-    let dw_mode_word = font.dw_cleartype_stem_width_mode.wrapping_mul(100) as u16;
+    let gray_mode_word = gray_stem_width_mode.wrapping_mul(100) as u16;
+    let gdi_mode_word = gdi_cleartype_stem_width_mode.wrapping_mul(100) as u16;
+    let dw_mode_word = dw_cleartype_stem_width_mode.wrapping_mul(100) as u16;
 
     bytecode.extend(PREP_set_stem_width_mode_a);
     bytecode.push_u8(high(gray_mode_word as u32));
@@ -281,7 +297,7 @@ pub(crate) fn build_prep_table(
 
     bytecode.extend(PREP_set_dropout_mode);
     bytecode.extend(PREP_reset_component_counter);
-    if font.x_height_snapping_exceptions.is_some() {
+    if x_height_snapping_exceptions.is_some() {
         bytecode.extend(PREP_adjust_delta_exceptions);
     }
     bytecode.extend(PREP_set_default_cvs_values);

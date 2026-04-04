@@ -1,28 +1,29 @@
 use skrifa::{GlyphId, Tag};
 
-use crate::c_font::{
-    Font as TaFont, TA_HINTING_LIMIT, TA_HINTING_RANGE_MAX, TA_HINTING_RANGE_MIN,
-    TA_INCREASE_X_HEIGHT, TA_PROP_INCREASE_X_HEIGHT_MIN,
+use crate::{
+    c_font::Font as TaFont,
+    control::{
+        ControlEntryAst, GlyphRef, GlyphSetElem, NumberSetAst, NumberSetElem, PointMode,
+        SegmentDirection,
+    },
+    control_index::ResolvedControlEntry,
+    info::InfoData,
+    intset::{IntSet, RangeExpr},
+    maxp::sfnt_has_ttfautohint_glyph,
+    prep::build_prep_table,
+    recorder::build_glyph_instructions,
+    tablestore::TableStore,
+    Args, AutohintError,
 };
-use crate::control::{
-    ControlEntryAst, GlyphRef, GlyphSetElem, NumberSetAst, NumberSetElem, PointMode,
-    SegmentDirection,
+use std::{
+    ffi::{c_int, c_long},
+    io::{self, Read},
 };
-use crate::control_index::ResolvedControlEntry;
-use crate::intset::{IntSet, RangeExpr};
-use crate::maxp::sfnt_has_ttfautohint_glyph;
-use crate::prep::build_prep_table;
-use crate::recorder::build_glyph_instructions;
-use crate::tablestore::TableStore;
-use crate::Args;
-use crate::{info::InfoData, AutohintError};
-use std::ffi::{c_int, c_long};
-use std::io::{self, Read};
 
 const STEM_MODE_MIN: i32 = -1;
 const STEM_MODE_MAX: i32 = 1;
-const HINTING_RANGE_MIN_MIN: i32 = 2;
-const INCREASE_X_HEIGHT_MIN: i32 = 6;
+const HINTING_RANGE_MIN_MIN: u32 = 2;
+const INCREASE_X_HEIGHT_MIN: u32 = 6;
 const TA_STYLE_NONE_DFLT: i32 = 83;
 const TA_ERR_ALREADY_PROCESSED: i32 = 0xF5;
 const TA_ERR_MISSING_LEGAL_PERMISSION: i32 = 0x0F;
@@ -37,6 +38,11 @@ fn ta_sfnt_build_glyph_instructions_cb(
 }
 
 pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
+    let dehint = font.args.dehint;
+    let adjust_subglyphs = font.args.adjust_subglyphs || font.args.pre_hinting;
+    let hint_composites = font.args.composites;
+    let fallback_style = fallback_style_for_script(script_to_index(&font.args.fallback_script));
+
     let num_sfnts = crate::maxp::num_faces_in_font_binary(&font.in_buf)?;
     font.init_owned_sfnts(num_sfnts as usize);
     font.table_store = TableStore::default();
@@ -73,16 +79,16 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
 
         let has_legal_permission =
             crate::maxp::sfnt_has_legal_permission(&font.table_store, sfnt_table_store_idx)?;
-        if !has_legal_permission && !font.ignore_restrictions {
+        if !has_legal_permission && !font.args.ignore_restrictions {
             return Err(AutohintError::UnportedError(
                 TA_ERR_MISSING_LEGAL_PERMISSION,
             ));
         }
 
-        if font.dehint {
+        if dehint {
             crate::glyf::split_glyf_table(font, i)?;
         } else {
-            if font.adjust_subglyphs {
+            if adjust_subglyphs {
                 crate::glyf::create_glyf_data(font, i)?;
             } else {
                 crate::glyf::split_glyf_table(font, i)?;
@@ -90,11 +96,11 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
 
             crate::glyf::handle_coverage(font, i)?;
 
-            font.sfnts_owned[i].increase_x_height = font.increase_x_height;
+            font.sfnts_owned[i].increase_x_height = font.args.increase_x_height;
         }
     }
 
-    if !font.dehint {
+    if !dehint {
         for i in 0..font.num_sfnts() {
             crate::glyf::adjust_coverage(font, i);
         }
@@ -108,7 +114,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
 
         crate::gasp::update_gasp(&mut font.table_store, sfnt_table_store_idx);
 
-        if !font.dehint {
+        if !dehint {
             crate::cvt::build_cvt_table_store(font, i)?;
 
             let glyf_data = font
@@ -121,9 +127,9 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
                 &mut font.table_store,
                 sfnt_table_store_idx,
                 &glyf_data,
-                font.increase_x_height,
+                font.args.increase_x_height,
                 font.control.has_index(),
-                font.fallback_style as usize,
+                fallback_style as usize,
             )?;
             let sfnt_ref = &mut font.sfnts_owned[i];
             if fpgm_len > sfnt_ref.max_instructions as usize {
@@ -153,7 +159,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
         let sfnt_max_stack_elements = sfnt.max_stack_elements;
         let sfnt_max_instructions = sfnt.max_instructions;
 
-        if font.dehint {
+        if dehint {
             crate::maxp::update_maxp_table_dehint(&mut font.table_store, sfnt_table_store_idx)?
         } else {
             let data = font
@@ -161,7 +167,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
                 .get(i)
                 .and_then(Option::as_ref)
                 .ok_or(AutohintError::NullPointer)?;
-            let adjust_composites = sfnt_max_components != 0 && font.hint_composites;
+            let adjust_composites = sfnt_max_components != 0 && hint_composites;
             crate::maxp::update_maxp_table_hinted(
                 &mut font.table_store,
                 sfnt_table_store_idx,
@@ -177,11 +183,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
             )?;
         }
 
-        if !font.dehint
-            && sfnt_max_components != 0
-            && !font.adjust_subglyphs
-            && font.hint_composites
-        {
+        if !dehint && sfnt_max_components != 0 && !adjust_subglyphs && hint_composites {
             crate::hmtx::update_hmtx(&mut font.table_store, sfnt_table_store_idx);
             crate::post::update_post(&mut font.table_store, sfnt_table_store_idx);
 
@@ -201,6 +203,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
                 &mut font.table_store,
                 sfnt_table_store_idx,
                 &mut font.info_data,
+                &font.args,
             )?;
         }
     }
@@ -266,11 +269,12 @@ impl TtfautohintCall {
     }
 }
 
-pub fn ttfautohint(call: &TtfautohintCall, idata: &mut InfoData) -> Result<Vec<u8>, AutohintError> {
-    validate_options(idata)?;
-
-    let default_script_idx = script_to_index(&idata.default_script);
-    let fallback_script_idx = script_to_index(&idata.fallback_script);
+pub fn ttfautohint(
+    call: &TtfautohintCall,
+    args: &Args,
+    idata: &mut InfoData,
+) -> Result<Vec<u8>, AutohintError> {
+    validate_options(args)?;
 
     let control_entries: Vec<ResolvedControlEntry> = if let Some(control_text) = &call.control_buf {
         match crate::control::SkrifaProvider::new(call.in_buf.to_vec()) {
@@ -299,49 +303,10 @@ pub fn ttfautohint(call: &TtfautohintCall, idata: &mut InfoData) -> Result<Vec<u
     }
 
     let mut font = TaFont::default();
-
-    if !idata.dehint {
-        let mut x_height_snapping_exceptions = None;
-
-        if !idata.x_height_snapping_exceptions_string.is_empty() {
-            x_height_snapping_exceptions = parse_number_set_to_intset(
-                &idata.x_height_snapping_exceptions_string,
-                TA_PROP_INCREASE_X_HEIGHT_MIN,
-                0x7FFF,
-            );
-        }
-
-        font.reference_index = idata.reference_index as c_long;
-        font.reference_name = idata.reference_name.clone();
-        font.hinting_range_min =
-            normalized_or_default(idata.hinting_range_min, TA_HINTING_RANGE_MIN);
-        font.hinting_range_max =
-            normalized_or_default(idata.hinting_range_max, TA_HINTING_RANGE_MAX);
-        font.hinting_limit = normalized_or_default(idata.hinting_limit, TA_HINTING_LIMIT);
-        font.increase_x_height =
-            normalized_or_default(idata.increase_x_height, TA_INCREASE_X_HEIGHT);
-        font.x_height_snapping_exceptions = x_height_snapping_exceptions;
-        font.fallback_stem_width = idata.fallback_stem_width as u32;
-        font.gray_stem_width_mode = idata.gray_stem_width_mode;
-        font.gdi_cleartype_stem_width_mode = idata.gdi_cleartype_stem_width_mode;
-        font.dw_cleartype_stem_width_mode = idata.dw_cleartype_stem_width_mode;
-        font.windows_compatibility = idata.windows_compatibility;
-        font.ignore_restrictions = call.ignore_restrictions;
-        font.adjust_subglyphs = idata.adjust_subglyphs;
-        font.hint_composites = idata.hint_composites;
-        font.fallback_style = fallback_style_for_script(fallback_script_idx);
-        font.fallback_scaling = idata.fallback_scaling;
-        font.default_script = default_script_idx;
-        font.symbol = idata.symbol;
-    }
+    font.args = args.clone();
 
     font.progress = None;
     font.info_data = idata.clone();
-    font.debug = call.debug;
-    font.dehint = idata.dehint;
-    font.ttfa_info = idata.ttfa_info;
-    font.epoch = call.epoch;
-    font.gasp_idx = u64::MAX;
     font.in_buf = call.in_buf.clone();
     font.control.set_entries(control_entries);
 
@@ -352,10 +317,16 @@ pub fn ttfautohint(call: &TtfautohintCall, idata: &mut InfoData) -> Result<Vec<u
     ttf_autohint_font(&mut font)
 }
 
-fn validate_options(idata: &InfoData) -> io::Result<()> {
-    if !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&idata.gray_stem_width_mode)
-        || !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&idata.gdi_cleartype_stem_width_mode)
-        || !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&idata.dw_cleartype_stem_width_mode)
+fn validate_options(args: &Args) -> io::Result<()> {
+    let stem_modes = parse_stem_width_mode_values(&args.stem_width_mode).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid stem-width mode: {e}"),
+        )
+    })?;
+    if !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&stem_modes.0)
+        || !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&stem_modes.1)
+        || !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&stem_modes.2)
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -363,45 +334,60 @@ fn validate_options(idata: &InfoData) -> io::Result<()> {
         ));
     }
 
-    if idata.hinting_range_min < HINTING_RANGE_MIN_MIN {
+    if args.hinting_range_min < HINTING_RANGE_MIN_MIN {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "hinting-range-min must be at least 2",
         ));
     }
 
-    if idata.hinting_range_max < idata.hinting_range_min {
+    if args.hinting_range_max < args.hinting_range_min {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "hinting-range-max must be >= hinting-range-min",
         ));
     }
 
-    if idata.hinting_limit > 0 && idata.hinting_limit < idata.hinting_range_max {
+    if args.hinting_limit > 0 && args.hinting_limit < args.hinting_range_max {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "hinting-limit must be 0 or >= hinting-range-max",
         ));
     }
 
-    if idata.increase_x_height > 0 && idata.increase_x_height < INCREASE_X_HEIGHT_MIN {
+    if args.increase_x_height > 0 && args.increase_x_height < INCREASE_X_HEIGHT_MIN {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "increase-x-height must be 0 or >= 6",
         ));
     }
 
-    if idata.fallback_stem_width < 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "fallback-stem-width must be non-negative",
-        ));
-    }
-
-    validate_default_script(&idata.default_script)?;
-    validate_fallback_script(&idata.fallback_script)?;
+    validate_default_script(&args.default_script)?;
+    validate_fallback_script(&args.fallback_script)?;
 
     Ok(())
+}
+
+pub(crate) fn parse_stem_width_mode_values(mode: &str) -> Result<(i32, i32, i32), AutohintError> {
+    if mode.len() != 3 {
+        return Err(AutohintError::InvalidArgument(
+            "Stem width mode string must consist of exactly three letters".to_string(),
+        ));
+    }
+    let parse_mode = |c| match c {
+        'n' => Ok(-1),
+        'q' => Ok(0),
+        's' => Ok(1),
+        _ => Err(AutohintError::InvalidArgument(
+            "Stem width mode letter must be 'n', 'q', or 's'".to_string(),
+        )),
+    };
+    let chars: Vec<char> = mode.chars().collect();
+    Ok((
+        parse_mode(chars[0])?,
+        parse_mode(chars[1])?,
+        parse_mode(chars[2])?,
+    ))
 }
 
 fn validate_default_script(value: &str) -> io::Result<()> {
@@ -426,20 +412,12 @@ fn validate_fallback_script(value: &str) -> io::Result<()> {
     ))
 }
 
-fn script_to_index(tag: &str) -> i32 {
+pub(crate) fn script_to_index(tag: &str) -> i32 {
     // Fine to unwrap: callers have already validated the tag is in DEFAULT_SCRIPTS.
     DEFAULT_SCRIPTS.iter().position(|&s| s == tag).unwrap() as i32
 }
 
-fn normalized_or_default(value: i32, default_value: u32) -> u32 {
-    if value < 0 {
-        default_value
-    } else {
-        value as u32
-    }
-}
-
-fn parse_number_set_to_intset(input: &str, min: i32, max: i32) -> Option<IntSet> {
+pub(crate) fn parse_number_set_to_intset(input: &str, min: i32, max: i32) -> Option<IntSet> {
     let ast = match NumberSetAst::parse(input) {
         Ok(ast) => ast,
         Err(_) => return None,
@@ -623,7 +601,7 @@ fn number_set_to_intset(set: &NumberSetAst, min: i32, max: i32) -> Result<IntSet
         .map_err(|_| AutohintError::ValidationError("invalid number set".to_string()))
 }
 
-fn fallback_style_for_script(script_index: i32) -> i32 {
+pub(crate) fn fallback_style_for_script(script_index: i32) -> i32 {
     crate::style_metadata::default_style_for_script(script_index as usize)
         .map(|style| style as i32)
         .unwrap_or(TA_STYLE_NONE_DFLT)

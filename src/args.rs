@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "ttfautohint", version = "1.8.4", about = "TrueType autohinter", long_about = None)]
 pub struct Args {
     /// Input font file. Use '-' for stdin.
@@ -40,11 +40,11 @@ pub struct Args {
 
     /// Set hinting limit (PPEM).
     #[arg(short = 'G', long, default_value_t = 200)]
-    pub hinting_limit: i32,
+    pub hinting_limit: u32,
 
     /// Set fallback stem width (font units).
     #[arg(short = 'H', long, default_value_t = 0)]
-    pub fallback_stem_width: i32,
+    pub fallback_stem_width: u32,
 
     /// Ignore font restrictions (fsType bit 1).
     #[arg(short = 'i', long)]
@@ -56,7 +56,7 @@ pub struct Args {
 
     /// Set minimum hinting range (PPEM).
     #[arg(short = 'l', long, default_value_t = 8)]
-    pub hinting_range_min: i32,
+    pub hinting_range_min: u32,
 
     /// Control file.
     #[arg(short = 'm', long)]
@@ -76,7 +76,7 @@ pub struct Args {
 
     /// Set maximum hinting range (PPEM).
     #[arg(short = 'r', long, default_value_t = 50)]
-    pub hinting_range_max: i32,
+    pub hinting_range_max: u32,
 
     /// Reference font file.
     #[arg(short = 'R', long)]
@@ -104,7 +104,7 @@ pub struct Args {
 
     /// Set increase x-height limit (PPEM).
     #[arg(short = 'x', long, default_value_t = 14)]
-    pub increase_x_height: i32,
+    pub increase_x_height: u32,
 
     /// X-height snapping exceptions.
     #[arg(short = 'X', long, default_value = "")]
@@ -112,7 +112,7 @@ pub struct Args {
 
     /// Reference font index.
     #[arg(short = 'Z', long, default_value_t = 0)]
-    pub reference_index: i32,
+    pub reference_index: u32,
 
     /// Debug mode.
     #[arg(long)]
@@ -121,4 +121,40 @@ pub struct Args {
     /// Epoch for reproducible builds (seconds since 1970-01-01).
     #[arg(long)]
     pub epoch: Option<u64>,
+}
+
+impl Default for Args {
+    fn default() -> Self {
+        Self {
+            input: String::new(),
+            output: String::new(),
+            stem_width_mode: "qsq".to_string(),
+            composites: false,
+            dehint: false,
+            default_script: "latn".to_string(),
+            fallback_script: "none".to_string(),
+            family_suffix: String::new(),
+            hinting_limit: 200,
+            fallback_stem_width: 0,
+            ignore_restrictions: false,
+            detailed_info: false,
+            hinting_range_min: 8,
+            control_file: None,
+            no_info: false,
+            pre_hinting: false,
+            adjust_subglyphs: false,
+            hinting_range_max: 50,
+            reference: None,
+            fallback_scaling: false,
+            symbol: false,
+            ttfa_table: false,
+            ttfa_info: false,
+            windows_compatibility: false,
+            increase_x_height: 14,
+            x_height_snapping_exceptions: String::new(),
+            reference_index: 0,
+            debug: false,
+            epoch: None,
+        }
+    }
 }

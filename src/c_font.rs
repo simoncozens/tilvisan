@@ -1,9 +1,8 @@
 use skrifa::GlyphId;
 
-use crate::control_index::ControlState;
-use crate::glyf::GlyfData;
-use crate::InfoData;
-use crate::{intset::IntSet, tablestore::TableStore};
+use crate::{
+    args::Args, control_index::ControlState, glyf::GlyfData, tablestore::TableStore, InfoData,
+};
 use core::ffi::{c_int, c_long, c_uint, c_ulong};
 
 pub(crate) const TA_STYLE_MAX: usize = 84;
@@ -52,39 +51,16 @@ impl Default for Sfnt {
 
 #[derive(Default)]
 pub(crate) struct Font {
+    pub(crate) args: Args,
     pub(crate) in_buf: Vec<u8>,
     pub(crate) reference_buf: Option<Vec<u8>>,
-    pub(crate) reference_index: c_long,
-    pub(crate) reference_name: Option<String>,
     pub(crate) sfnts_owned: Vec<Sfnt>,
     pub(crate) glyf_ptrs_owned: Vec<Option<GlyfData>>,
     pub(crate) table_store: TableStore,
     pub(crate) have_dsig: bool,
-    pub(crate) gasp_idx: c_ulong,
     pub(crate) control: ControlState,
     pub(crate) progress: TaProgressFunc,
     pub(crate) info_data: InfoData,
-    pub(crate) hinting_range_min: c_uint,
-    pub(crate) hinting_range_max: c_uint,
-    pub(crate) hinting_limit: c_uint,
-    pub(crate) increase_x_height: c_uint,
-    pub(crate) x_height_snapping_exceptions: Option<IntSet>,
-    pub(crate) fallback_stem_width: c_uint,
-    pub(crate) gray_stem_width_mode: c_int,
-    pub(crate) gdi_cleartype_stem_width_mode: c_int,
-    pub(crate) dw_cleartype_stem_width_mode: c_int,
-    pub(crate) windows_compatibility: bool,
-    pub(crate) adjust_subglyphs: bool,
-    pub(crate) hint_composites: bool,
-    pub(crate) ignore_restrictions: bool,
-    pub(crate) fallback_style: c_int,
-    pub(crate) fallback_scaling: bool,
-    pub(crate) default_script: c_int,
-    pub(crate) symbol: bool,
-    pub(crate) dehint: bool,
-    pub(crate) debug: bool,
-    pub(crate) ttfa_info: bool,
-    pub(crate) epoch: u64,
 }
 
 impl Font {
