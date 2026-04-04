@@ -137,11 +137,11 @@ impl ControlIndex {
 
         let mut index = Self::default();
 
-        for ((font_idx, glyph_idx, _ppem, _point), rule) in delta_by_key {
+        for ((_font_idx, glyph_idx, _ppem, _point), rule) in delta_by_key {
             index.delta_rules.entry(glyph_idx).or_default().push(rule);
         }
 
-        for ((font_idx, glyph_idx), style) in coverage_by_key {
+        for ((_font_idx, glyph_idx), style) in coverage_by_key {
             index.coverage_rules.push((glyph_idx, style));
         }
 
@@ -151,7 +151,7 @@ impl ControlIndex {
 
 pub(crate) fn delta_rules_for_glyph(
     index: &ControlIndex,
-    font_idx: i32,
+    _font_idx: i32,
     glyph_idx: GlyphId,
 ) -> Vec<DeltaRule> {
     index

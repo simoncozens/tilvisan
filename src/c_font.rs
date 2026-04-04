@@ -76,7 +76,6 @@ pub(crate) struct Font {
     pub(crate) tables: BTreeMap<Tag, TableEntry>, // tag → raw bytes + processing metadata
 
     // Computed per-SFNT fields (like current SFNT in ta.h):
-    pub(crate) max_composite_points: u16,
     pub(crate) have_dsig: bool,
     pub(crate) control: ControlState,
     pub(crate) progress: TaProgressFunc,
@@ -142,7 +141,7 @@ impl Font {
     }
 
     pub(crate) fn has_table(&self, tag: Tag) -> bool {
-        return self.tables.contains_key(&tag);
+        self.tables.contains_key(&tag)
     }
 
     pub(crate) fn get_table(&self, tag: Tag) -> Option<&[u8]> {

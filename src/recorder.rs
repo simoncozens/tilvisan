@@ -52,17 +52,15 @@ fn compute_cvt_blue_offsets(font: &Font, ta_style: usize) -> Option<(u16, u16)> 
     Some((cvt_blue_refs_offset, cvt_blue_shoots_offset))
 }
 
-fn get_glyph(font: &Font, sfnt_idx: usize, glyph_idx: GlyphId) -> Option<&ScaledGlyph> {
+fn get_glyph(font: &Font, _sfnt_idx: usize, glyph_idx: GlyphId) -> Option<&ScaledGlyph> {
     // Bounds check and get GlyfData pointer.
-    if font.glyf_ptr_owned.is_none() {
-        return None;
-    }
+    font.glyf_ptr_owned.as_ref()?;
 
     let glyf_data = font.glyf_ptr_owned.as_ref()?;
     glyf_data.glyphs.get(glyph_idx.to_u32() as usize)
 }
 
-fn put_glyph(font: &mut Font, sfnt_idx: usize, glyph_idx: GlyphId, glyph: ScaledGlyph) {
+fn put_glyph(font: &mut Font, _sfnt_idx: usize, glyph_idx: GlyphId, glyph: ScaledGlyph) {
     // Bounds check and get GlyfData pointer.
 
     let Some(glyf_data) = font.glyf_ptr_owned.as_mut() else {
@@ -1191,7 +1189,7 @@ fn recorder_record_hints_for_ppem(
     }
 
     let rust_plan = crate::glyf::compute_hint_plan_rs(
-        &font,
+        font,
         glyph_idx,
         ta_style,
         is_non_base as u8,
@@ -1577,7 +1575,7 @@ pub(crate) fn build_glyph_instructions(
     let mut is_empty_glyph = !is_composite_glyph && glyph_ref.num_contours() == 0;
     let mut glyph_num_points = glyph_ref.num_points() as u32;
 
-    if let Ok(info) = crate::loader::load_glyph_info(&font_ref, idx) {
+    if let Ok(info) = crate::loader::load_glyph_info(font_ref, idx) {
         is_composite_glyph = info.kind == 2;
         is_empty_glyph = info.kind == 0;
         glyph_num_points = info.num_points as u32;
@@ -1590,7 +1588,7 @@ pub(crate) fn build_glyph_instructions(
     let mut bytecode = Bytecode::new();
 
     if is_composite_glyph {
-        let subglyph = match build_subglyph_shifter_bytecode(&font_ref, idx) {
+        let subglyph = match build_subglyph_shifter_bytecode(font_ref, idx) {
             Ok(v) => v,
             Err(status) => return Err(AutohintError::UnportedError(status as i32)),
         };
@@ -1602,7 +1600,7 @@ pub(crate) fn build_glyph_instructions(
         } else if ta_style == fallback_style {
             let recorder = RustRecorder::new(&glyph_ref);
             let (emitted, num_args) =
-                build_glyph_scaler_bytecode(&recorder, &font_ref, idx, font_ref.args.composites)?;
+                build_glyph_scaler_bytecode(&recorder, font_ref, idx, font_ref.args.composites)?;
             bytecode.extend(emitted);
 
             let num_storage = StorageAreaLocations::sal_segment_offset as u16;
@@ -1662,7 +1660,7 @@ pub(crate) fn build_glyph_instructions(
             if action_hints_records.is_empty_singleton() {
                 let (emitted, num_args) = build_glyph_scaler_bytecode(
                     &recorder,
-                    &font_ref,
+                    font_ref,
                     idx,
                     font_ref.args.composites,
                 )?;
@@ -1732,7 +1730,7 @@ pub(crate) fn build_glyph_instructions(
                 let pos2 = bytecode.as_slice().len();
                 let segment_result = build_glyph_segments_bytecode(
                     &recorder,
-                    &font_ref,
+                    font_ref,
                     idx,
                     font_ref.args.composites,
                     style_id,
@@ -1811,7 +1809,7 @@ pub(crate) fn build_glyph_instructions(
 
         if action_hints_records.is_empty_singleton() {
             let (emitted, num_args) =
-                build_glyph_scaler_bytecode(&recorder, &font_ref, idx, font_ref.args.composites)?;
+                build_glyph_scaler_bytecode(&recorder, font_ref, idx, font_ref.args.composites)?;
             bytecode.extend(emitted);
 
             let num_storage = StorageAreaLocations::sal_segment_offset as u16;
@@ -1877,7 +1875,7 @@ pub(crate) fn build_glyph_instructions(
             let pos2 = bytecode.as_slice().len();
             let segment_result = build_glyph_segments_bytecode(
                 &recorder,
-                &font_ref,
+                font_ref,
                 idx,
                 font_ref.args.composites,
                 style_id,

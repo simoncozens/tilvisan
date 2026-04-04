@@ -827,7 +827,7 @@ pub(crate) fn handle_coverage(font: &mut Font) -> Result<(), AutohintError> {
     let glyph_count = font.sfnt.glyph_count;
 
     let (glyph_styles, sample_glyphs_local) = crate::globals::compute_style_coverage(
-        &font,
+        font,
         glyph_count as usize,
         TA_STYLE_UNASSIGNED,
         font.args.debug,

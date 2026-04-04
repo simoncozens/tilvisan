@@ -2,7 +2,7 @@ use skrifa::{
     raw::{FontData, FontRead, TableProvider},
     FontRef, Tag,
 };
-use write_fonts::{dump_table, from_obj::ToOwnedTable, read::FileRef, tables::maxp::Maxp};
+use write_fonts::{dump_table, from_obj::ToOwnedTable, tables::maxp::Maxp};
 
 use crate::{c_font::Font, error::AutohintError, opcodes::FunctionNumbers};
 
@@ -103,14 +103,6 @@ pub(crate) fn sfnt_has_legal_permission(font: &Font) -> Result<bool, AutohintErr
     }
 
     Ok(true)
-}
-
-pub(crate) fn num_faces_in_font_binary(data: &[u8]) -> Result<u32, AutohintError> {
-    let count = match FileRef::new(data)? {
-        FileRef::Font(_) => 1,
-        FileRef::Collection(collection) => collection.len(),
-    };
-    Ok(count)
 }
 
 pub(crate) fn num_glyphs_in_font_binary(data: &[u8]) -> Result<u16, AutohintError> {
