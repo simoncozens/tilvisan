@@ -4,7 +4,7 @@ use skrifa::{
 };
 use write_fonts::{dump_table, from_obj::ToOwnedTable, tables::maxp::Maxp};
 
-use crate::{c_font::Font, error::AutohintError, opcodes::FunctionNumbers};
+use crate::{error::AutohintError, font::Font, opcodes::FunctionNumbers};
 
 pub(crate) fn update_maxp_table_dehint(font: &mut Font) -> Result<(), AutohintError> {
     if font.get_processed(Tag::new(b"maxp")) {

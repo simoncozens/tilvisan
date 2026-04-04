@@ -6,7 +6,7 @@ use write_fonts::{
     types::{LongDateTime, Tag},
 };
 
-use crate::{c_font::Font, error::AutohintError};
+use crate::{error::AutohintError, font::Font};
 // The TrueType epoch (1st January 1904) as a Unix timestamp.
 // Equivalent to Utc.with_ymd_and_hms(1904, 1, 1, 0, 0, 0).unwrap().timestamp()
 const MACINTOSH_EPOCH: i64 = -2082844800;

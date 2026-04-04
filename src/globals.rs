@@ -1,5 +1,5 @@
 use crate::{
-    c_font::{Font, TA_STYLE_MAX},
+    font::{Font, TA_STYLE_MAX},
     AutohintError,
 };
 use skrifa::{

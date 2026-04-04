@@ -1,6 +1,6 @@
 use crate::{
     bytecode::{high, low, Bytecode},
-    c_font::Font,
+    font::Font,
     opcodes::{CALL, PUSHB_1, PUSHB_2, PUSHW_1, PUSHW_2},
 };
 use skrifa::{

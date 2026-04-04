@@ -1,6 +1,6 @@
 use crate::{
     bytecode::Bytecode,
-    c_font::{Font, Sfnt},
+    font::{Font, Sfnt},
     AutohintError,
 };
 use skrifa::{

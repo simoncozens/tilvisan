@@ -4,7 +4,7 @@ use skrifa::GlyphId;
 
 use crate::{
     bytecode::Bytecode,
-    c_font::Font,
+    font::Font,
     glyf::{extract_unscaled_outline, ScaledGlyph},
     loader::build_subglyph_shifter_bytecode,
     logger::set_debug_logging,

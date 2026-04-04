@@ -1,12 +1,12 @@
 use skrifa::{GlyphId, Tag};
 
 use crate::{
-    c_font::Font as TaFont,
     control::{
         ControlEntryAst, GlyphRef, GlyphSetElem, NumberSetAst, NumberSetElem, PointMode,
         SegmentDirection,
     },
     control_index::ResolvedControlEntry,
+    font::Font as TaFont,
     info::InfoData,
     intset::{IntSet, RangeExpr},
     maxp::sfnt_has_ttfautohint_glyph,
@@ -141,8 +141,8 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     }
 
     if !dehint && sfnt_max_components != 0 && !adjust_subglyphs && hint_composites {
-        crate::hmtx::update_hmtx(font);
-        crate::post::update_post(font);
+        font.update_hmtx();
+        font.update_post();
 
         crate::gpos::update_gpos(font)?;
     }

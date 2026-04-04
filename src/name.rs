@@ -5,7 +5,7 @@ use skrifa::{
 use write_fonts::{dump_table, from_obj::ToOwnedTable, tables::name::Name};
 
 use crate::{
-    c_font::Font,
+    font::Font,
     info::{process_name_post, process_name_record},
     AutohintError,
 };

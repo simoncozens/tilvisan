@@ -2,7 +2,7 @@
 use crate::{
     bytecode::{Bytecode, CONTROL_DELTA_PPEM_MIN},
     bytes,
-    c_font::Font,
+    font::Font,
     glyf::GlyfData,
     opcodes::*,
     AutohintError,

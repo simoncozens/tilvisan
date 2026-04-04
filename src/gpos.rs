@@ -9,7 +9,7 @@ use write_fonts::{
     NullableOffsetMarker,
 };
 
-use crate::{c_font::Font, glyf::ScaledGlyph, AutohintError};
+use crate::{font::Font, glyf::ScaledGlyph, AutohintError};
 
 fn update_anchor(anchor: &mut AnchorTable, glyph: Option<&ScaledGlyph>) {
     let Some(ScaledGlyph {

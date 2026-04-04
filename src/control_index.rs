@@ -1,6 +1,6 @@
 use skrifa::GlyphId;
 
-use crate::{c_font::Font, intset::IntSet, AutohintError};
+use crate::{font::Font, intset::IntSet, AutohintError};
 use std::collections::{BTreeMap, HashMap};
 
 const TA_DIGIT: u16 = 0x8000;

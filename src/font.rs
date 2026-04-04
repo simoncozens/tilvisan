@@ -1,4 +1,10 @@
-use skrifa::{raw::TableProvider, FontRef, GlyphId, Tag};
+use skrifa::{
+    raw::{FontData, FontRead as _, TableProvider},
+    FontRef, GlyphId, GlyphId16, Tag,
+};
+use write_fonts::{
+    dump_table, from_obj::ToOwnedTable as _, tables::post::Post, types::Version16Dot16,
+};
 
 use crate::{args::Args, control_index::ControlState, glyf::GlyfData, AutohintError, InfoData};
 use core::ffi::{c_int, c_long, c_uint};
@@ -181,5 +187,52 @@ impl Font {
             builder.add_raw(*tag, &entry.data);
         }
         builder.build()
+    }
+
+    pub(crate) fn update_hmtx(&mut self) {
+        if !self.get_processed(Tag::new(b"hmtx")) {
+            if let Some(table) = self.get_table(Tag::new(b"hmtx")) {
+                let mut bytes = table.to_vec();
+                // Append two zero bytes to the end of the `hmtx` table
+                bytes.extend_from_slice(&[0x00, 0x00]);
+                self.update_table(Tag::new(b"hmtx"), &bytes);
+            }
+        }
+    }
+
+    pub(crate) fn update_post(&mut self) {
+        if self.get_processed(Tag::new(b"post")) {
+            println!("`post` table alread processed, skipping update");
+            return;
+        }
+        if let Some(table) = self.get_table(Tag::new(b"post")) {
+            let bytes = FontData::new(table);
+            let read_table = write_fonts::read::tables::post::Post::read(bytes).unwrap();
+            let mut write_table: Post = read_table.to_owned_table();
+            match write_table.version {
+                Version16Dot16::VERSION_2_5 => {
+                    write_table.num_glyphs = write_table.num_glyphs.map(|x| x + 1);
+                    self.update_table(Tag::new(b"post"), &dump_table(&write_table).unwrap());
+                }
+                Version16Dot16::VERSION_2_0 => {
+                    // Gather old string names
+                    let mut order = (0..read_table.num_glyphs().unwrap_or_default())
+                        .filter_map(|gid| read_table.glyph_name(GlyphId16::new(gid)))
+                        .collect::<Vec<_>>();
+                    order.push(".ttfautohint");
+                    let mut new_table = Post::new_v2(order);
+                    // Copy old fields
+                    new_table.is_fixed_pitch = read_table.is_fixed_pitch();
+                    new_table.italic_angle = read_table.italic_angle();
+                    new_table.underline_position = read_table.underline_position();
+                    new_table.underline_thickness = read_table.underline_thickness();
+                    new_table.max_mem_type1 = read_table.max_mem_type1();
+                    new_table.max_mem_type42 = read_table.max_mem_type42();
+                    new_table.max_mem_type1 = read_table.max_mem_type1();
+                    self.update_table(Tag::new(b"post"), &dump_table(&new_table).unwrap());
+                }
+                _ => {}
+            }
+        }
     }
 }

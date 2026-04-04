@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals)]
 use crate::{
     bytecode::{high, low, Bytecode, CONTROL_DELTA_PPEM_MIN},
-    c_font::{Font, TA_PROP_INCREASE_X_HEIGHT_MIN},
+    font::{Font, TA_PROP_INCREASE_X_HEIGHT_MIN},
     glyf::{GlyfData, TA_STYLE_MAX},
     intset::IntSet,
     opcodes::*,

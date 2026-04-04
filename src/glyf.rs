@@ -5,8 +5,8 @@ extern crate libc;
 
 use crate::{
     bytecode::Bytecode,
-    c_font::Font,
     error::AutohintError,
+    font::Font,
     logger::set_debug_logging,
     opcodes::{CvtLocations, ADD, PUSHB_2, PUSHB_3, RCVT, WCVTP},
 };
