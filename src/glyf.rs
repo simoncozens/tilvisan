@@ -27,7 +27,7 @@ use write_fonts::{
 
 pub const STYLE_SLOTS: usize = STYLE_COUNT;
 
-type TaRsBuildGlyphInstructions =
+type BuildGlyphInstructions =
     Option<fn(&mut Font, usize, GlyphId) -> Result<i32, AutohintError>>;
 
 fn fallback_style(font: &Font) -> u16 {
@@ -37,12 +37,12 @@ fn fallback_style(font: &Font) -> u16 {
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct TaRsOutlinePoint {
+pub struct OutlinePoint {
     pub x: i32,
     pub y: i32,
 }
 
-struct TaRsBuiltGlyphs {
+struct BuiltGlyphs {
     glyphs: Vec<ScaledGlyph>,
     num_glyphs: u16,
     max_composite_points: u16,
@@ -152,7 +152,7 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
     let sfnt_max_components = font.sfnt.max_components;
 
     let build_result =
-        match build_glyphs_rs(font, use_scaler, font.args.composites, sfnt_max_components) {
+        match build_glyphs(font, use_scaler, font.args.composites, sfnt_max_components) {
             Ok(result) => result,
             Err(error) => return Err(AutohintError::UnportedError(error as i32)),
         };
@@ -240,7 +240,7 @@ fn f26dot6_to_i32(v: skrifa::raw::types::F26Dot6) -> i32 {
     (v.to_bits() + 32) >> 6
 }
 
-type OutlinePayload = (Vec<TaRsOutlinePoint>, Vec<u8>, Vec<u16>);
+type OutlinePayload = (Vec<OutlinePoint>, Vec<u8>, Vec<u16>);
 
 pub(crate) fn extract_unscaled_outline(
     font: &Font,
@@ -263,7 +263,7 @@ pub(crate) fn extract_unscaled_outline(
             let mut contours = Vec::with_capacity(scaled.contours.len());
 
             for p in scaled.points.iter().copied() {
-                points.push(TaRsOutlinePoint {
+                points.push(OutlinePoint {
                     x: f26dot6_to_i32(p.x),
                     y: f26dot6_to_i32(p.y),
                 });
@@ -745,12 +745,12 @@ fn add_ttfautohint_glyph(glyphs: &mut Vec<ScaledGlyph>) {
 
 // ── Batch constructor ────────────────────────────────────────────────────────
 
-fn build_glyphs_rs(
+fn build_glyphs(
     font: &mut Font,
     use_scaler: u8,
     hint_composites: bool,
     max_components: u16,
-) -> Result<TaRsBuiltGlyphs, u32> {
+) -> Result<BuiltGlyphs, u32> {
     let result = if use_scaler != 0 {
         run_font_through_scaler(font)
     } else {
@@ -774,7 +774,7 @@ fn build_glyphs_rs(
 
     let num_glyphs = glyphs.len();
 
-    Ok(TaRsBuiltGlyphs {
+    Ok(BuiltGlyphs {
         glyphs,
         num_glyphs: num_glyphs as u16,
         max_composite_points,
@@ -782,7 +782,7 @@ fn build_glyphs_rs(
     })
 }
 
-pub(crate) fn compute_hint_plan_rs(
+pub(crate) fn compute_hint_plan(
     font: &Font,
     glyph_id: GlyphId,
     style_index: usize,
@@ -860,7 +860,7 @@ pub(crate) fn handle_coverage(font: &mut Font) -> Result<(), AutohintError> {
 pub(crate) fn build_glyf_table(
     font: &mut Font,
     sfnt_idx: usize,
-    build_glyph_instructions: TaRsBuildGlyphInstructions,
+    build_glyph_instructions: BuildGlyphInstructions,
 ) -> Result<(), AutohintError> {
     if font.glyf_ptr_owned.is_none() {
         return Err(AutohintError::InvalidTable);

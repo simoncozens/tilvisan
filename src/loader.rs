@@ -20,11 +20,11 @@ fn f2dot14_to_f16dot16(v: skrifa::raw::types::F2Dot14) -> i32 {
 fn glyph_totals(
     font: &skrifa::FontRef<'_>,
     glyph_id: GlyphId,
-) -> Result<(u32, i32), TaRsLoaderStatus> {
-    let glyf = font.glyf().map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+) -> Result<(u32, i32), LoaderStatus> {
+    let glyf = font.glyf().map_err(|_| LoaderStatus::InvalidArgument)?;
     let loca = font
         .loca(None)
-        .map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+        .map_err(|_| LoaderStatus::InvalidArgument)?;
 
     let mut stack = vec![glyph_id];
     let mut num_points: u32 = 0;
@@ -34,12 +34,12 @@ fn glyph_totals(
     while let Some(gid) = stack.pop() {
         visits += 1;
         if visits > MAX_COMPOSITE_VISITS {
-            return Err(TaRsLoaderStatus::InvalidArgument);
+            return Err(LoaderStatus::InvalidArgument);
         }
 
         let glyph = loca
             .get_glyf(gid, &glyf)
-            .map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+            .map_err(|_| LoaderStatus::InvalidArgument)?;
 
         match glyph {
             None => {}
@@ -59,14 +59,14 @@ fn glyph_totals(
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum TaRsLoaderStatus {
+pub enum LoaderStatus {
     InvalidArgument = 0x23,
 }
 
 const FT_SUBGLYPH_FLAG_ARGS_ARE_XY_VALUES: u16 = 0x0002;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum TaRsLoaderGlyphKind {
+pub enum LoaderGlyphKind {
     Empty = 0,
     Simple = 1,
     Composite = 2,
@@ -74,7 +74,7 @@ pub enum TaRsLoaderGlyphKind {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
-pub struct TaRsLoaderGlyphInfo {
+pub struct LoaderGlyphInfo {
     pub kind: u32,
     pub num_points: u16,
     pub num_contours: i16,
@@ -82,36 +82,36 @@ pub struct TaRsLoaderGlyphInfo {
     pub _reserved: u16,
 }
 
-impl TaRsLoaderGlyphInfo {
-    pub fn new(font: &Font, glyph_id: GlyphId) -> Result<Self, TaRsLoaderStatus> {
+impl LoaderGlyphInfo {
+    pub fn new(font: &Font, glyph_id: GlyphId) -> Result<Self, LoaderStatus> {
         let ttf_bytes = font.build_ttf();
         let Ok(font) = skrifa::FontRef::new(&ttf_bytes) else {
-            return Err(TaRsLoaderStatus::InvalidArgument);
+            return Err(LoaderStatus::InvalidArgument);
         };
-        let glyf = font.glyf().map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+        let glyf = font.glyf().map_err(|_| LoaderStatus::InvalidArgument)?;
         let loca = font
             .loca(None)
-            .map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+            .map_err(|_| LoaderStatus::InvalidArgument)?;
         let glyph = loca
             .get_glyf(glyph_id, &glyf)
-            .map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+            .map_err(|_| LoaderStatus::InvalidArgument)?;
         match glyph {
             None => Ok(Self {
-                kind: TaRsLoaderGlyphKind::Empty as u32,
+                kind: LoaderGlyphKind::Empty as u32,
                 num_points: 0,
                 num_contours: 0,
                 num_components: 0,
                 _reserved: 0,
             }),
             Some(Glyph::Simple(g)) => Ok(Self {
-                kind: TaRsLoaderGlyphKind::Simple as u32,
+                kind: LoaderGlyphKind::Simple as u32,
                 num_points: g.num_points() as u16,
                 num_contours: g.number_of_contours(),
                 num_components: 0,
                 _reserved: 0,
             }),
             Some(Glyph::Composite(g)) => Ok(Self {
-                kind: TaRsLoaderGlyphKind::Composite as u32,
+                kind: LoaderGlyphKind::Composite as u32,
                 num_points: glyph_totals(&font, glyph_id)
                     .ok()
                     .and_then(|(points, _)| u16::try_from(points).ok())
@@ -127,13 +127,13 @@ impl TaRsLoaderGlyphInfo {
 pub(crate) fn load_glyph_info(
     font: &Font,
     glyph_id: GlyphId,
-) -> Result<TaRsLoaderGlyphInfo, TaRsLoaderStatus> {
-    TaRsLoaderGlyphInfo::new(font, glyph_id)
+) -> Result<LoaderGlyphInfo, LoaderStatus> {
+    LoaderGlyphInfo::new(font, glyph_id)
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
-pub(crate) struct TaRsLoaderComponent {
+pub(crate) struct LoaderComponent {
     pub(crate) glyph_id: GlyphId,
     pub(crate) flags: u16,
     pub(crate) arg1: i16,
@@ -143,7 +143,7 @@ pub(crate) struct TaRsLoaderComponent {
     pub(crate) yx: i32,
     pub(crate) yy: i32,
 }
-impl TaRsLoaderComponent {
+impl LoaderComponent {
     pub(crate) fn from_composite_glyph_component(component: &Component) -> Self {
         Self {
             glyph_id: component.glyph.into(),
@@ -167,19 +167,19 @@ impl TaRsLoaderComponent {
 fn load_components_vec(
     font: &skrifa::FontRef<'_>,
     glyph_id: GlyphId,
-) -> Result<Vec<TaRsLoaderComponent>, TaRsLoaderStatus> {
-    let glyf = font.glyf().map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+) -> Result<Vec<LoaderComponent>, LoaderStatus> {
+    let glyf = font.glyf().map_err(|_| LoaderStatus::InvalidArgument)?;
     let loca = font
         .loca(None)
-        .map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+        .map_err(|_| LoaderStatus::InvalidArgument)?;
     let glyph = loca
         .get_glyf(glyph_id, &glyf)
-        .map_err(|_| TaRsLoaderStatus::InvalidArgument)?;
+        .map_err(|_| LoaderStatus::InvalidArgument)?;
 
     match glyph {
         Some(Glyph::Composite(g)) => Ok(g
             .components()
-            .map(|c| TaRsLoaderComponent::from_composite_glyph_component(&c))
+            .map(|c| LoaderComponent::from_composite_glyph_component(&c))
             .collect()),
         _ => Ok(Vec::new()),
     }
@@ -188,10 +188,10 @@ fn load_components_vec(
 pub(crate) fn build_subglyph_shifter_bytecode(
     font: &Font,
     glyph_id: GlyphId,
-) -> Result<Bytecode, TaRsLoaderStatus> {
+) -> Result<Bytecode, LoaderStatus> {
     let ttf_bytes = font.build_ttf();
     let Ok(font) = skrifa::FontRef::new(&ttf_bytes) else {
-        return Err(TaRsLoaderStatus::InvalidArgument);
+        return Err(LoaderStatus::InvalidArgument);
     };
 
     let components = load_components_vec(&font, glyph_id)?;

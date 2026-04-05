@@ -698,7 +698,7 @@ impl<'a> RustRecorder<'a> {
 }
 
 #[derive(Copy, Clone)]
-pub struct TaRsRecorderMarshaledAction {
+pub struct RecorderMarshaledAction {
     pub edge1_first_idx: u16,
     pub edge2_first_idx: u16,
     pub edge3_first_idx: u16,
@@ -711,18 +711,18 @@ pub struct TaRsRecorderMarshaledAction {
     pub num_segment_edges: u16,
 }
 
-struct TaRsReplayProcessResult {
+struct ReplayProcessResult {
     bytecode: Bytecode,
     did_emit_action: bool,
 }
 
-struct TaRsGlyphSegmentsBytecode {
+struct GlyphSegmentsBytecode {
     bytecode: Bytecode,
     num_segments: u16,
     num_args: u16,
 }
 
-impl TaRsRecorderMarshaledAction {
+impl RecorderMarshaledAction {
     fn init() -> Self {
         Self {
             edge1_first_idx: 0xFFFF,
@@ -769,7 +769,7 @@ fn marshal_action_fields(
     upper_bound_edge_idx: u16,
     cvt_blue_refs_offset: u16,
     cvt_blue_shoots_offset: u16,
-) -> Option<TaRsRecorderMarshaledAction> {
+) -> Option<RecorderMarshaledAction> {
     const TA_EDGE_ROUND: u8 = 1 << 0;
     const TA_EDGE_SERIF: u8 = 1 << 1;
 
@@ -784,7 +784,7 @@ fn marshal_action_fields(
     const TA_SERIF_LINK1: u32 = 52;
     const TA_SERIF_LINK2: u32 = 59;
 
-    let mut m = TaRsRecorderMarshaledAction::init();
+    let mut m = RecorderMarshaledAction::init();
 
     let maybe_bound_first_idx = |edge_idx: u16| -> u16 {
         if edge_idx == 0xFFFF {
@@ -1016,7 +1016,7 @@ fn recorder_replay_process_hint_record(
     cvt_blue_refs_offset: u16,
     cvt_blue_shoots_offset: u16,
     top_to_bottom_hinting: bool,
-) -> Result<TaRsReplayProcessResult, AutohintError> {
+) -> Result<ReplayProcessResult, AutohintError> {
     const TA_DIMENSION_VERT: u8 = 1;
     const TA_IP_BEFORE: u8 = 0;
     const TA_IP_AFTER: u8 = 1;
@@ -1034,7 +1034,7 @@ fn recorder_replay_process_hint_record(
     const TA_BOUND: u8 = 66;
 
     if rec.dim != TA_DIMENSION_VERT {
-        return Ok(TaRsReplayProcessResult {
+        return Ok(ReplayProcessResult {
             bytecode: Bytecode::new(),
             did_emit_action: false,
         });
@@ -1062,7 +1062,7 @@ fn recorder_replay_process_hint_record(
             if point_valid {
                 recorder.ip_before_points.insert(rec.point_ix);
             }
-            return Ok(TaRsReplayProcessResult {
+            return Ok(ReplayProcessResult {
                 bytecode: Bytecode::new(),
                 did_emit_action: false,
             });
@@ -1071,7 +1071,7 @@ fn recorder_replay_process_hint_record(
             if point_valid {
                 recorder.ip_after_points.insert(rec.point_ix);
             }
-            return Ok(TaRsReplayProcessResult {
+            return Ok(ReplayProcessResult {
                 bytecode: Bytecode::new(),
                 did_emit_action: false,
             });
@@ -1083,7 +1083,7 @@ fn recorder_replay_process_hint_record(
                     point: rec.point_ix,
                 });
             }
-            return Ok(TaRsReplayProcessResult {
+            return Ok(ReplayProcessResult {
                 bytecode: Bytecode::new(),
                 did_emit_action: false,
             });
@@ -1096,14 +1096,14 @@ fn recorder_replay_process_hint_record(
                     point: rec.point_ix,
                 });
             }
-            return Ok(TaRsReplayProcessResult {
+            return Ok(ReplayProcessResult {
                 bytecode: Bytecode::new(),
                 did_emit_action: false,
             });
         }
         TA_BLUE => {
             if !edge_valid || !edge2_valid {
-                return Ok(TaRsReplayProcessResult {
+                return Ok(ReplayProcessResult {
                     bytecode: Bytecode::new(),
                     did_emit_action: false,
                 });
@@ -1111,7 +1111,7 @@ fn recorder_replay_process_hint_record(
         }
         TA_ANCHOR | TA_ADJUST | TA_LINK | TA_STEM => {
             if !edge_valid || !edge2_valid {
-                return Ok(TaRsReplayProcessResult {
+                return Ok(ReplayProcessResult {
                     bytecode: Bytecode::new(),
                     did_emit_action: false,
                 });
@@ -1119,7 +1119,7 @@ fn recorder_replay_process_hint_record(
         }
         TA_SERIF | TA_SERIF_ANCHOR | TA_SERIF_LINK2 => {
             if !edge_valid {
-                return Ok(TaRsReplayProcessResult {
+                return Ok(ReplayProcessResult {
                     bytecode: Bytecode::new(),
                     did_emit_action: false,
                 });
@@ -1127,20 +1127,20 @@ fn recorder_replay_process_hint_record(
         }
         TA_SERIF_LINK1 => {
             if !edge_valid || !edge2_valid || !edge3_valid {
-                return Ok(TaRsReplayProcessResult {
+                return Ok(ReplayProcessResult {
                     bytecode: Bytecode::new(),
                     did_emit_action: false,
                 });
             }
         }
         TA_BOUND => {
-            return Ok(TaRsReplayProcessResult {
+            return Ok(ReplayProcessResult {
                 bytecode: Bytecode::new(),
                 did_emit_action: false,
             });
         }
         _ => {
-            return Ok(TaRsReplayProcessResult {
+            return Ok(ReplayProcessResult {
                 bytecode: Bytecode::new(),
                 did_emit_action: false,
             });
@@ -1160,7 +1160,7 @@ fn recorder_replay_process_hint_record(
         top_to_bottom_hinting,
     )?;
 
-    Ok(TaRsReplayProcessResult {
+    Ok(ReplayProcessResult {
         bytecode: emitted,
         did_emit_action: true,
     })
@@ -1183,7 +1183,7 @@ fn recorder_record_hints_for_ppem(
         recorder.hints_record_num_actions = 0;
     }
 
-    let rust_plan = crate::glyf::compute_hint_plan_rs(
+    let rust_plan = crate::glyf::compute_hint_plan(
         font,
         glyph_idx,
         ta_style,
@@ -2049,7 +2049,7 @@ fn build_glyph_segments_bytecode(
     last_indices: &[u32],
     num_wrap_around_segments: u16,
     optimize: bool,
-) -> Result<TaRsGlyphSegmentsBytecode, AutohintError> {
+) -> Result<GlyphSegmentsBytecode, AutohintError> {
     if first_indices.len() != last_indices.len() {
         return Err(AutohintError::InvalidTable);
     }
@@ -2213,7 +2213,7 @@ fn build_glyph_segments_bytecode(
     }
     bytecode.push_u8(CALL);
 
-    Ok(TaRsGlyphSegmentsBytecode {
+    Ok(GlyphSegmentsBytecode {
         bytecode,
         num_segments,
         num_args: num_args.try_into().unwrap_or(u16::MAX),

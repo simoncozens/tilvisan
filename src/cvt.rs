@@ -18,7 +18,7 @@ const CVTL_MAX_RUNTIME: u32 = 7;
 const STYLE_SLOTS: usize = STYLE_COUNT;
 
 #[derive(Default)]
-pub struct TaRsStyleMetrics {
+pub struct StyleMetrics {
     pub hwidths: Vec<u16>,
     pub vwidths: Vec<u16>,
     pub blue_refs: Vec<u16>,
@@ -27,7 +27,7 @@ pub struct TaRsStyleMetrics {
 }
 
 pub(crate) fn build_cvt_table_store(font: &mut Font) -> Result<(), AutohintError> {
-    let blob_data = build_cvt_table_rs(font)?;
+    let blob_data = build_cvt_table(font)?;
 
     if font.get_processed(Tag::new(b"glyf")) {
         return Ok(());
@@ -38,11 +38,11 @@ pub(crate) fn build_cvt_table_store(font: &mut Font) -> Result<(), AutohintError
     Ok(())
 }
 
-fn compute_style_metrics_rs(
+fn compute_style_metrics(
     font: &mut Font,
     style_index: usize,
     sample_glyph: u32,
-) -> Result<TaRsStyleMetrics, u32> {
+) -> Result<StyleMetrics, u32> {
     if sample_glyph == 0 {
         return Err(TA_ERR_MISSING_GLYPH);
     }
@@ -90,7 +90,7 @@ fn compute_style_metrics_rs(
         blue_adjustment.push(if blue.is_adjustment { 1 } else { 0 });
     }
 
-    Ok(TaRsStyleMetrics {
+    Ok(StyleMetrics {
         hwidths,
         vwidths,
         blue_refs,
@@ -130,8 +130,8 @@ fn replace_style_with_fallback(sfnt: &mut Sfnt, style_idx: usize, fallback_style
     }
 }
 
-fn build_cvt_blob_rs(
-    metrics_arr: &[TaRsStyleMetrics],
+fn build_cvt_blob(
+    metrics_arr: &[StyleMetrics],
     windows_compatibility: bool,
     units_per_em: u16,
 ) -> Result<CvtBlobData, u32> {
@@ -267,19 +267,19 @@ fn build_cvt_blob_rs(
     Ok(out)
 }
 
-fn build_cvt_table_rs(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
+fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
     // Clone sample_glyphs to release the borrow before mutable access
     let sample_glyphs = font.sfnt.sample_glyphs.clone();
     let fallback_style = crate::orchestrate::fallback_style_for_script(
         crate::orchestrate::script_to_index(&font.args.fallback_script),
     );
 
-    let mut style_metrics: [TaRsStyleMetrics; STYLE_SLOTS] =
-        core::array::from_fn(|_| TaRsStyleMetrics::default());
+    let mut style_metrics: [StyleMetrics; STYLE_SLOTS] =
+        core::array::from_fn(|_| StyleMetrics::default());
 
     for style_idx in 0..STYLE_SLOTS {
         let glyph_id = sample_glyphs.get(style_idx).copied().unwrap_or(0);
-        match compute_style_metrics_rs(font, style_idx, glyph_id) {
+        match compute_style_metrics(font, style_idx, glyph_id) {
             Ok(metrics) => {
                 style_metrics[style_idx] = metrics;
             }
@@ -300,7 +300,7 @@ fn build_cvt_table_rs(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
 
     let units_per_em = crate::maxp::units_per_em_in_font_binary(&font.in_buf)?;
 
-    let blob_data = match build_cvt_blob_rs(
+    let blob_data = match build_cvt_blob(
         &style_metrics,
         font.args.windows_compatibility,
         units_per_em as u16,

@@ -49,7 +49,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     font.sfnt.glyph_count = glyph_count as c_long;
     font.sfnt.glyph_styles = vec![crate::style::GlyphStyle::unassigned(); glyph_count as usize];
 
-    crate::control_index::control_build_tree_rs(font)?;
+    crate::control_index::control_build_tree(font)?;
 
     let has_legal_permission = crate::maxp::sfnt_has_legal_permission(font)?;
     if !has_legal_permission && !font.args.ignore_restrictions {

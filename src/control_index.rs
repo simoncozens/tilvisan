@@ -177,11 +177,15 @@ pub(crate) fn control_apply_coverage(font: &mut Font) {
         }
 
         // Apply the style override while preserving the is_digit flag
-        glyph_styles[glyph_idx] = GlyphStyle::new(style, glyph_styles[glyph_idx].is_digit, glyph_styles[glyph_idx].is_non_base);
+        glyph_styles[glyph_idx] = GlyphStyle::new(
+            style,
+            glyph_styles[glyph_idx].is_digit,
+            glyph_styles[glyph_idx].is_non_base,
+        );
     }
 }
 
-pub(crate) fn control_build_tree_rs(font: &mut Font) -> Result<(), AutohintError> {
+pub(crate) fn control_build_tree(font: &mut Font) -> Result<(), AutohintError> {
     font.control.index = None;
 
     if font.control.entries.is_empty() {
