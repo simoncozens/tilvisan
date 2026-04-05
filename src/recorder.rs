@@ -15,31 +15,35 @@ use crate::{
 };
 use skrifa::outline::{ExportedHintPlan, ExportedHintRecord};
 
-use crate::style::STYLE_COUNT;
+use crate::style::{StyleIndex, STYLE_COUNT};
 
 const ADDITIONAL_STACK_ELEMENTS: u16 = 20;
 const TA_DIR_NONE: i32 = 4;
 
-fn compute_cvt_blue_offsets(font: &Font, ta_style: usize) -> Option<(u16, u16)> {
-    if ta_style >= STYLE_COUNT {
+fn compute_cvt_blue_offsets(font: &Font, ta_style: StyleIndex) -> Option<(u16, u16)> {
+    if ta_style.as_usize() >= STYLE_COUNT {
         return None;
     }
 
     // Bounds check and get GlyfData pointer.
     let glyf_data = font.glyf_ptr_owned.as_ref()?;
+    let data = glyf_data
+        .style_offsets
+        .get(&ta_style)
+        .or_else(|| glyf_data.style_offsets.values().next())?;
 
     let base = (CvtLocations::cvtl_max_runtime as u32)
-        .checked_add(3u32.checked_mul(glyf_data.num_used_styles)?)?
-        .checked_add(*glyf_data.cvt_offsets.get(ta_style)?)?;
+        .checked_add(3u32.checked_mul(glyf_data.num_used_styles())?)?
+        .checked_add(data.cvt_offset)?;
 
     let cvt_blue_refs_offset_u32 = base
         .checked_add(1)?
-        .checked_add(*glyf_data.cvt_horz_width_sizes.get(ta_style)?)?
+        .checked_add(data.horz_width_size)?
         .checked_add(1)?
-        .checked_add(*glyf_data.cvt_vert_width_sizes.get(ta_style)?)?;
+        .checked_add(data.vert_width_size)?;
 
     let cvt_blue_shoots_offset_u32 =
-        cvt_blue_refs_offset_u32.checked_add(*glyf_data.cvt_blue_zone_sizes.get(ta_style)?)?;
+        cvt_blue_refs_offset_u32.checked_add(data.blue_zone_size)?;
 
     let cvt_blue_refs_offset = u16::try_from(cvt_blue_refs_offset_u32).ok()?;
     let cvt_blue_shoots_offset = u16::try_from(cvt_blue_shoots_offset_u32).ok()?;
@@ -1172,7 +1176,7 @@ fn recorder_record_hints_for_ppem(
     glyph_idx: GlyphId,
     glyph_num_points: u32,
     ppem: u16,
-    ta_style: usize,
+    ta_style: StyleIndex,
     is_non_base: bool,
     is_digit: bool,
 ) -> Result<(), AutohintError> {
@@ -1186,7 +1190,7 @@ fn recorder_record_hints_for_ppem(
     let rust_plan = crate::glyf::compute_hint_plan(
         font,
         glyph_idx,
-        ta_style,
+        ta_style.as_usize(),
         is_non_base as u8,
         is_digit as u8,
         ppem,
@@ -1202,7 +1206,7 @@ fn recorder_record_hints_for_ppem(
         return Err(AutohintError::NullPointer);
     };
 
-    let top_to_bottom_hinting = crate::style_metadata::script_hints_top_to_bottom(ta_style);
+    let top_to_bottom_hinting = crate::style_metadata::script_hints_top_to_bottom(ta_style.as_usize());
 
     for rec in &rust_plan.records {
         let result = recorder_replay_process_hint_record(
@@ -1533,10 +1537,10 @@ pub(crate) fn build_glyph_instructions(
         return Err(AutohintError::NullPointer);
     }
 
-    let (glyf_num_glyphs, glyf_style_ids) = font_ref
+    let glyf_num_glyphs = font_ref
         .glyf_ptr_owned
         .as_ref()
-        .map(|g| (g.num_glyphs, g.style_ids))
+        .map(|g| g.num_glyphs)
         .ok_or(AutohintError::NullPointer)?;
 
     let mut glyph_ref: ScaledGlyph = get_glyph(font_ref, sfnt_idx, idx)
@@ -1562,7 +1566,7 @@ pub(crate) fn build_glyph_instructions(
         log_debug_heading(&format!("glyph {}", idx), '=');
     }
 
-    let ta_style = gstyle.style_index as usize;
+    let ta_style = StyleIndex(gstyle.style_index as usize);
     let mut use_gstyle_data = true;
 
     let mut is_composite_glyph = glyph_ref.num_components() != 0;
@@ -1589,7 +1593,7 @@ pub(crate) fn build_glyph_instructions(
         bytecode.extend(subglyph);
         use_gstyle_data = false;
     } else if font_ref.args.fallback_scaling {
-        if ta_style == fallback_style {
+        if ta_style.as_usize() == fallback_style {
             let recorder = RustRecorder::new(&glyph_ref);
             let (emitted, num_args) =
                 build_glyph_scaler_bytecode(&recorder, font_ref, idx, font_ref.args.composites)?;
@@ -1718,7 +1722,12 @@ pub(crate) fn build_glyph_instructions(
                     }
                 }
 
-                let style_id = glyf_style_ids[ta_style];
+                let style_id = font_ref
+                    .glyf_ptr_owned
+                    .as_ref()
+                    .and_then(|g| g.style_offsets.get(&ta_style))
+                    .map(|d| d.slot)
+                    .unwrap_or(0xFFFF);
                 let pos2 = bytecode.as_slice().len();
                 let segment_result = build_glyph_segments_bytecode(
                     &recorder,
@@ -1863,7 +1872,12 @@ pub(crate) fn build_glyph_instructions(
                 }
             }
 
-            let style_id = glyf_style_ids[ta_style];
+            let style_id = font_ref
+                .glyf_ptr_owned
+                .as_ref()
+                .and_then(|g| g.style_offsets.get(&ta_style))
+                .map(|d| d.slot)
+                .unwrap_or(0xFFFF);
             let pos2 = bytecode.as_slice().len();
             let segment_result = build_glyph_segments_bytecode(
                 &recorder,

@@ -1,6 +1,6 @@
 use crate::{
     font::Font,
-    style::{GlyphStyle, STYLE_INDEX_UNASSIGNED},
+    style::{GlyphStyle, StyleIndex, STYLE_INDEX_UNASSIGNED},
     AutohintError,
 };
 use indexmap::IndexMap;
@@ -67,9 +67,9 @@ pub(crate) fn compute_style_coverage(
     debug_dump: bool,
     face_index: i32,
     num_faces: i32,
-) -> Result<(Vec<GlyphStyle>, IndexMap<usize, GlyphId>), AutohintError> {
+) -> Result<(Vec<GlyphStyle>, IndexMap<StyleIndex, GlyphId>), AutohintError> {
     let mut glyph_styles_out = vec![GlyphStyle::unassigned(); glyph_count];
-    let mut sample_glyphs_map: IndexMap<usize, GlyphId> = IndexMap::new();
+    let mut sample_glyphs_map: IndexMap<StyleIndex, GlyphId> = IndexMap::new();
 
     fn propagate_style_to_composites(
         gindex: usize,
@@ -103,7 +103,7 @@ pub(crate) fn compute_style_coverage(
 
     fn dump_style_coverage(
         glyph_styles: &[GlyphStyle],
-        sample_glyphs: &IndexMap<usize, GlyphId>,
+        sample_glyphs: &IndexMap<StyleIndex, GlyphId>,
         face_index: i32,
         num_faces: i32,
     ) {
@@ -115,7 +115,7 @@ pub(crate) fn compute_style_coverage(
 
         for &style_idx in sample_glyphs.keys() {
             let style_name = STYLE_CLASSES
-                .get(style_idx)
+                .get(style_idx.as_usize())
                 .map(|style| style.name)
                 .unwrap_or("(unknown)");
 
@@ -123,7 +123,7 @@ pub(crate) fn compute_style_coverage(
 
             let mut count = 0usize;
             for (idx, style) in glyph_styles.iter().enumerate() {
-                if style.style_index as usize == style_idx {
+                if style.style_index as usize == style_idx.as_usize() {
                     if count.is_multiple_of(10) {
                         eprint!(" ");
                     }
@@ -185,7 +185,7 @@ pub(crate) fn compute_style_coverage(
         if let Some(skrifa_style) = styles.style_index(gid as u32) {
             style_index = skrifa_style as u16;
             sample_glyphs_map
-                .entry(skrifa_style)
+                .entry(StyleIndex(skrifa_style))
                 .or_insert(GlyphId::new(gid as u32));
         }
 

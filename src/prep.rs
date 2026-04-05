@@ -5,7 +5,6 @@ use crate::{
     glyf::GlyfData,
     intset::IntSet,
     opcodes::*,
-    style::STYLE_COUNT,
     AutohintError,
 };
 use skrifa::Tag;
@@ -107,7 +106,7 @@ pub(crate) fn build_prep_table(
         return Err(AutohintError::TableAlreadyProcessed);
     }
 
-    let num_used_styles = glyf_data.num_used_styles as u8;
+    let num_used_styles = glyf_data.num_used_styles() as u8;
     let mut num_stack_elements = None;
     let windows_compatibility = font.args.windows_compatibility;
     let x_height_snapping_exceptions = if font.args.x_height_snapping_exceptions.is_empty() {
@@ -144,12 +143,8 @@ pub(crate) fn build_prep_table(
     } else {
         bytecode.push_u8(PUSHB_1 - 1 + num_used_styles + 2);
     }
-    // Iterate through styles in reverse, skipping unused ones (style_ids[i] == 0xFFFF)
-    for i in (0..STYLE_COUNT).rev() {
-        if glyf_data.style_ids[i] == 0xFFFF {
-            continue;
-        }
-        let offset = glyf_data.cvt_x_height_blue_offset(i);
+    for (style_idx, _) in glyf_data.style_offsets.iter().rev() {
+        let offset = glyf_data.cvt_x_height_blue_offset(*style_idx);
         bytecode.push_u8(if offset >= 0xFFFF { 0 } else { offset as u8 });
     }
     bytecode.push_u8(num_used_styles);
@@ -162,16 +157,12 @@ pub(crate) fn build_prep_table(
     } else {
         bytecode.push_u8(PUSHB_1 - 1 + 2 * num_used_styles + 2);
     }
-    // Iterate through styles for vertical widths: offset and size
-    for i in (0..STYLE_COUNT).rev() {
-        if glyf_data.style_ids[i] == 0xFFFF {
-            continue;
-        }
-        let vert_standard_width_offset = glyf_data.cvt_vert_standard_width_offset(i);
+    for (style_idx, _) in glyf_data.style_offsets.iter().rev() {
+        let style_idx = *style_idx;
+        let vert_standard_width_offset = glyf_data.cvt_vert_standard_width_offset(style_idx);
         bytecode.push_u8(vert_standard_width_offset as u8);
-
-        let vert_widths_size = glyf_data.cvt_vert_widths_size(i);
-        let blues_size = glyf_data.cvt_blues_size(i);
+        let vert_widths_size = glyf_data.cvt_vert_widths_size(style_idx);
+        let blues_size = glyf_data.cvt_blues_size(style_idx);
         let num_blues = if blues_size > 1 {
             blues_size - if windows_compatibility { 2 } else { 0 }
         } else {
@@ -187,22 +178,13 @@ pub(crate) fn build_prep_table(
     } else {
         bytecode.push_u8(PUSHB_1 - 1 + 2 * num_used_styles + 2);
     }
-    // Iterate through styles for blue shoots
-    for i in (0..STYLE_COUNT).rev() {
-        if glyf_data.style_ids[i] == 0xFFFF {
-            continue;
-        }
-        let blue_shoots_offset = glyf_data.cvt_blue_shoots_offset(i);
+    for (style_idx, _) in glyf_data.style_offsets.iter().rev() {
+        let style_idx = *style_idx;
+        let blue_shoots_offset = glyf_data.cvt_blue_shoots_offset(style_idx);
         bytecode.push_u8(blue_shoots_offset as u8);
-
-        let blues_size = glyf_data.cvt_blues_size(i);
+        let blues_size = glyf_data.cvt_blues_size(style_idx);
         let num_blues = if blues_size > 1 {
-            blues_size
-                - if font.args.windows_compatibility {
-                    2
-                } else {
-                    0
-                }
+            blues_size - if font.args.windows_compatibility { 2 } else { 0 }
         } else {
             0
         };
@@ -223,12 +205,8 @@ pub(crate) fn build_prep_table(
     } else {
         bytecode.push_u8(PUSHW_1 - 1 + num_used_styles + 2);
     }
-    // Iterate through styles for vertical widths offsets
-    for i in (0..STYLE_COUNT).rev() {
-        if glyf_data.style_ids[i] == 0xFFFF {
-            continue;
-        }
-        let offset = glyf_data.cvt_vert_widths_offset(i) * 64;
+    for (style_idx, _) in glyf_data.style_offsets.iter().rev() {
+        let offset = glyf_data.cvt_vert_widths_offset(*style_idx) * 64;
         bytecode.push_u8(high(offset));
         bytecode.push_u8(low(offset));
     }
@@ -244,12 +222,8 @@ pub(crate) fn build_prep_table(
     } else {
         bytecode.push_u8(PUSHW_1 - 1 + num_used_styles + 2);
     }
-    // Iterate through styles for vertical widths sizes
-    for i in (0..STYLE_COUNT).rev() {
-        if glyf_data.style_ids[i] == 0xFFFF {
-            continue;
-        }
-        let size = glyf_data.cvt_vert_widths_size(i) * 64;
+    for (style_idx, _) in glyf_data.style_offsets.iter().rev() {
+        let size = glyf_data.cvt_vert_widths_size(*style_idx) * 64;
         bytecode.push_u8(high(size));
         bytecode.push_u8(low(size));
     }
@@ -281,15 +255,11 @@ pub(crate) fn build_prep_table(
     } else {
         bytecode.push_u8(PUSHB_1 - 1 + 2 * num_used_styles + 2);
     }
-    // Iterate through styles for blue refs offsets and sizes
-    for i in (0..STYLE_COUNT).rev() {
-        if glyf_data.style_ids[i] == 0xFFFF {
-            continue;
-        }
-        let blue_refs_offset = glyf_data.cvt_blue_refs_offset(i);
+    for (style_idx, _) in glyf_data.style_offsets.iter().rev() {
+        let style_idx = *style_idx;
+        let blue_refs_offset = glyf_data.cvt_blue_refs_offset(style_idx);
         bytecode.push_u8(blue_refs_offset as u8);
-
-        bytecode.push_u8(glyf_data.cvt_blues_size(i) as u8);
+        bytecode.push_u8(glyf_data.cvt_blues_size(style_idx) as u8);
     }
     bytecode.push_u8(num_used_styles);
     bytecode.extend(PREP_round_blues);

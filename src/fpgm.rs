@@ -5,6 +5,7 @@ use crate::{
     font::Font,
     glyf::GlyfData,
     opcodes::*,
+    style::StyleIndex,
     AutohintError,
 };
 use skrifa::Tag;
@@ -5743,9 +5744,13 @@ fn build_fpgm(
     has_control_data: bool,
     font_fallback_style: usize,
 ) -> Bytecode {
-    let fallback_style: u32 =
-        CVT_SCALING_VALUE_OFFSET(0) as u32 + glyphdata.style_ids[font_fallback_style];
-    let num_used_styles = glyphdata.num_used_styles as u8;
+    let fallback_slot = glyphdata
+        .style_offsets
+        .get(&StyleIndex(font_fallback_style))
+        .map(|d| d.slot)
+        .unwrap_or(0xFFFF);
+    let fallback_style: u32 = CVT_SCALING_VALUE_OFFSET(0) as u32 + fallback_slot;
+    let num_used_styles = glyphdata.num_used_styles() as u8;
     let mut bytecode = Bytecode::new();
 
     bytecode.extend_bytes(FPGM_bci_align_x_height_a);

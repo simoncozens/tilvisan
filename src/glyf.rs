@@ -8,8 +8,9 @@ use crate::{
     error::AutohintError,
     font::Font,
     opcodes::{CvtLocations, ADD, PUSHB_2, PUSHB_3, RCVT, WCVTP},
-    style::{GlyphStyle, STYLE_COUNT, STYLE_INDEX_UNASSIGNED},
+    style::{GlyphStyle, StyleIndex, STYLE_INDEX_UNASSIGNED},
 };
+use indexmap::IndexMap;
 use skrifa::{
     outline::{compute_hint_plan_exported, ExportedHintPlan, STYLE_CLASSES},
     prelude::*,
@@ -25,7 +26,24 @@ use write_fonts::{
     },
 };
 
-pub const STYLE_SLOTS: usize = STYLE_COUNT;
+/// Per-style CVT layout data for one Skrifa style.
+///
+/// `slot` is the compact running number (0..num_used_styles) used in CVT
+/// bytecode.  The remaining fields describe the layout of this style's block
+/// in the CVT table.
+#[derive(Debug, Clone, Copy)]
+pub struct StyleCvtData {
+    /// Compact slot index (0..num_used_styles) used in CVT bytecode.
+    pub slot: u32,
+    /// Byte-word offset of this style's data block within the CVT section.
+    pub cvt_offset: u32,
+    pub horz_width_size: u32,
+    pub vert_width_size: u32,
+    pub blue_zone_size: u32,
+    /// Word index of the x-height blue shoot within this style's blue-shoots
+    /// array.  `0xFFFF` means no x-height blue zone.
+    pub blue_adjustment_offset: u32,
+}
 
 type BuildGlyphInstructions = Option<fn(&mut Font, usize, GlyphId) -> Result<i32, AutohintError>>;
 
@@ -57,17 +75,9 @@ pub(crate) struct GlyfData {
     /* for coverage bookkeeping */
     pub adjusted: u8,
 
-    /* styles present in a font get a running number; */
-    /* unavailable styles get value 0xFFFF */
-    pub style_ids: [u32; STYLE_SLOTS],
-    pub num_used_styles: u32,
-
-    /* we have separate CVT data for each style */
-    pub cvt_offsets: [u32; STYLE_SLOTS],
-    pub cvt_horz_width_sizes: [u32; STYLE_SLOTS],
-    pub cvt_vert_width_sizes: [u32; STYLE_SLOTS],
-    pub cvt_blue_zone_sizes: [u32; STYLE_SLOTS],
-    pub cvt_blue_adjustment_offsets: [u32; STYLE_SLOTS],
+    /// Per-style CVT layout, keyed by Skrifa style index.
+    /// Only styles with usable metrics are present; absence means unused.
+    pub style_offsets: IndexMap<StyleIndex, StyleCvtData>,
 }
 
 fn merge_style_coverage(master: &mut [GlyphStyle], current: &[GlyphStyle]) {
@@ -139,13 +149,7 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
         glyphs: Vec::new(),
         master_glyph_styles: Vec::new(),
         adjusted: 0,
-        style_ids: [0; STYLE_SLOTS],
-        num_used_styles: 0,
-        cvt_offsets: [0; STYLE_SLOTS],
-        cvt_horz_width_sizes: [0; STYLE_SLOTS],
-        cvt_vert_width_sizes: [0; STYLE_SLOTS],
-        cvt_blue_zone_sizes: [0; STYLE_SLOTS],
-        cvt_blue_adjustment_offsets: [0; STYLE_SLOTS],
+        style_offsets: IndexMap::new(),
     };
 
     let sfnt_max_components = font.sfnt.max_components;
@@ -170,59 +174,80 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
 }
 
 impl GlyfData {
-    /// scaling value index of style ID id
-    pub fn cvt_scaling_value_offset(&self, id: usize) -> u32 {
-        CvtLocations::cvtl_max_runtime as u32 + (id as u32)
+    /// Number of styles with usable CVT metrics.
+    pub fn num_used_styles(&self) -> u32 {
+        self.style_offsets.len() as u32
     }
 
-    /// vwidth offset data of style ID id
-    pub fn cvt_vwidth_offset_data(&self, id: usize) -> u32 {
-        self.cvt_scaling_value_offset(id) + self.num_used_styles
+    fn style_data(&self, style: StyleIndex) -> Option<&StyleCvtData> {
+        self.style_offsets.get(&style)
     }
 
-    /// vwidth size data of style ID id
-    pub fn cvt_vwidth_size_data(&self, id: usize) -> u32 {
-        self.cvt_vwidth_offset_data(id) + self.num_used_styles
+    /// CVT table index for the scaling value of the given slot (0..num_used_styles).
+    pub fn cvt_scaling_value_offset(&self, slot: u32) -> u32 {
+        CvtLocations::cvtl_max_runtime as u32 + slot
     }
-    /// horizontal standard width indices of style i
-    pub fn cvt_horz_standard_width_offset(&self, i: usize) -> u32 {
-        CvtLocations::cvtl_max_runtime as u32 + 3 * self.num_used_styles + self.cvt_offsets[i]
+
+    /// CVT table index for the vwidth offset data of the given slot.
+    pub fn cvt_vwidth_offset_data(&self, slot: u32) -> u32 {
+        self.cvt_scaling_value_offset(slot) + self.num_used_styles()
     }
-    /// start of horizontal stem widths array of style i
-    pub fn cvt_horz_widths_offset(&self, i: usize) -> u32 {
-        self.cvt_horz_standard_width_offset(i) + 1
+
+    /// CVT table index for the vwidth size data of the given slot.
+    pub fn cvt_vwidth_size_data(&self, slot: u32) -> u32 {
+        self.cvt_vwidth_offset_data(slot) + self.num_used_styles()
     }
-    /// size of horizontal stem widths array of style i
-    pub fn cvt_horz_widths_size(&self, i: usize) -> u32 {
-        self.cvt_horz_width_sizes[i]
+
+    /// Horizontal standard-width CVT index for `style`.
+    pub fn cvt_horz_standard_width_offset(&self, style: StyleIndex) -> u32 {
+        let cvt_off = self.style_data(style).map(|d| d.cvt_offset).unwrap_or(0);
+        CvtLocations::cvtl_max_runtime as u32 + 3 * self.num_used_styles() + cvt_off
     }
-    /// vertical standard width indices of style i
-    pub fn cvt_vert_standard_width_offset(&self, i: usize) -> u32 {
-        self.cvt_horz_widths_offset(i) + self.cvt_horz_widths_size(i)
+    /// Start of horizontal stem-widths array for `style`.
+    pub fn cvt_horz_widths_offset(&self, style: StyleIndex) -> u32 {
+        self.cvt_horz_standard_width_offset(style) + 1
     }
-    /// start of vertical stem widths array of style i
-    pub fn cvt_vert_widths_offset(&self, i: usize) -> u32 {
-        self.cvt_vert_standard_width_offset(i) + 1
+    /// Size of horizontal stem-widths array for `style`.
+    pub fn cvt_horz_widths_size(&self, style: StyleIndex) -> u32 {
+        self.style_data(style)
+            .map(|d| d.horz_width_size)
+            .unwrap_or(0)
     }
-    /// size of vertical stem widths array of style i
-    pub fn cvt_vert_widths_size(&self, i: usize) -> u32 {
-        self.cvt_vert_width_sizes[i]
+    /// Vertical standard-width CVT index for `style`.
+    pub fn cvt_vert_standard_width_offset(&self, style: StyleIndex) -> u32 {
+        self.cvt_horz_widths_offset(style) + self.cvt_horz_widths_size(style)
     }
-    /// number of blue zones (including artificial ones) of style i
-    pub fn cvt_blues_size(&self, i: usize) -> u32 {
-        self.cvt_blue_zone_sizes[i]
+    /// Start of vertical stem-widths array for `style`.
+    pub fn cvt_vert_widths_offset(&self, style: StyleIndex) -> u32 {
+        self.cvt_vert_standard_width_offset(style) + 1
     }
-    /// start of blue zone arrays for flat edges of style i
-    pub fn cvt_blue_refs_offset(&self, i: usize) -> u32 {
-        self.cvt_vert_widths_offset(i) + self.cvt_vert_widths_size(i)
+    /// Size of vertical stem-widths array for `style`.
+    pub fn cvt_vert_widths_size(&self, style: StyleIndex) -> u32 {
+        self.style_data(style)
+            .map(|d| d.vert_width_size)
+            .unwrap_or(0)
     }
-    /// start of blue zone arrays for round edges of style i
-    pub fn cvt_blue_shoots_offset(&self, i: usize) -> u32 {
-        self.cvt_blue_refs_offset(i) + self.cvt_blues_size(i)
+    /// Number of blue zones (including artificial) for `style`.
+    pub fn cvt_blues_size(&self, style: StyleIndex) -> u32 {
+        self.style_data(style)
+            .map(|d| d.blue_zone_size)
+            .unwrap_or(0)
     }
-    /// x height blue zone (shoot) index of style i (valid if < 0xFFFF)
-    pub fn cvt_x_height_blue_offset(&self, i: usize) -> u32 {
-        self.cvt_blue_shoots_offset(i) + self.cvt_blue_adjustment_offsets[i]
+    /// Start of flat blue-zone array for `style`.
+    pub fn cvt_blue_refs_offset(&self, style: StyleIndex) -> u32 {
+        self.cvt_vert_widths_offset(style) + self.cvt_vert_widths_size(style)
+    }
+    /// Start of round blue-zone array for `style`.
+    pub fn cvt_blue_shoots_offset(&self, style: StyleIndex) -> u32 {
+        self.cvt_blue_refs_offset(style) + self.cvt_blues_size(style)
+    }
+    /// X-height blue-shoot CVT index for `style` (valid if < 0xFFFF).
+    pub fn cvt_x_height_blue_offset(&self, style: StyleIndex) -> u32 {
+        let adj = self
+            .style_data(style)
+            .map(|d| d.blue_adjustment_offset)
+            .unwrap_or(0xFFFF);
+        self.cvt_blue_shoots_offset(style) + adj
     }
 }
 

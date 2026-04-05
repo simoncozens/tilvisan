@@ -43,7 +43,7 @@ impl TableEntry {
 pub(crate) struct Sfnt {
     pub(crate) glyph_count: c_long,
     pub(crate) glyph_styles: Vec<crate::style::GlyphStyle>,
-    pub(crate) sample_glyphs: IndexMap<usize, GlyphId>,
+    pub(crate) sample_glyphs: IndexMap<crate::style::StyleIndex, GlyphId>,
     pub(crate) increase_x_height: c_uint,
     pub(crate) max_composite_points: u16,
     pub(crate) max_composite_contours: u16,

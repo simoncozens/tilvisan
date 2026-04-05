@@ -3,6 +3,32 @@ use skrifa::outline::STYLE_CLASSES;
 pub(crate) const STYLE_COUNT: usize = STYLE_CLASSES.len();
 pub(crate) const STYLE_INDEX_UNASSIGNED: u16 = u16::MAX;
 
+/// A Skrifa-native style index (0..STYLE_COUNT).
+///
+/// Used as the key when mapping from style to per-style data.  Distinct from
+/// a *slot index* (the compact running number 0..num_used_styles assigned to
+/// styles that have usable CVT metrics).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StyleIndex(pub usize);
+
+impl StyleIndex {
+    pub const fn as_usize(self) -> usize {
+        self.0
+    }
+}
+
+impl From<usize> for StyleIndex {
+    fn from(v: usize) -> Self {
+        StyleIndex(v)
+    }
+}
+
+impl From<u16> for StyleIndex {
+    fn from(v: u16) -> Self {
+        StyleIndex(v as usize)
+    }
+}
+
 /// Style information for a glyph.
 ///
 /// Replaces the bit-packed u16 representation with explicit fields for clarity and maintainability.

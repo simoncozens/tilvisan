@@ -1,9 +1,11 @@
 use crate::{
     bytecode::Bytecode,
     font::{Font, Sfnt},
-    style::STYLE_COUNT,
+    glyf::StyleCvtData,
+    style::{StyleIndex, STYLE_COUNT},
     AutohintError,
 };
+use indexmap::IndexMap;
 use skrifa::{
     outline::{compute_unscaled_style_metrics_exported, STYLE_CLASSES},
     FontRef, GlyphId, Tag,
@@ -97,13 +99,8 @@ fn compute_style_metrics(
 
 pub struct CvtBlobData {
     pub bytecode: Bytecode,
-    pub num_used_styles: u32,
-    pub style_ids: [u32; STYLE_SLOTS],
-    pub cvt_offsets: [u32; STYLE_SLOTS],
-    pub cvt_horz_width_sizes: [u32; STYLE_SLOTS],
-    pub cvt_vert_width_sizes: [u32; STYLE_SLOTS],
-    pub cvt_blue_zone_sizes: [u32; STYLE_SLOTS],
-    pub cvt_blue_adjustment_offsets: [u32; STYLE_SLOTS],
+    /// Per-style CVT layout, keyed by Skrifa style index.
+    pub style_offsets: IndexMap<StyleIndex, StyleCvtData>,
 }
 
 fn checked_i32_to_u16(v: i32) -> Result<u16, AutohintError> {
@@ -135,44 +132,34 @@ fn build_cvt_blob(
         return Err(AutohintError::InvalidTable);
     }
 
-    let mut out = CvtBlobData {
-        bytecode: Bytecode::new(),
-        num_used_styles: 0,
-        style_ids: [0xFFFFu32; STYLE_SLOTS],
-        cvt_offsets: [0; STYLE_SLOTS],
-        cvt_horz_width_sizes: [0; STYLE_SLOTS],
-        cvt_vert_width_sizes: [0; STYLE_SLOTS],
-        cvt_blue_zone_sizes: [0; STYLE_SLOTS],
-        cvt_blue_adjustment_offsets: [0xFFFFu32; STYLE_SLOTS],
-    };
+    let default_width = (50 * units_per_em as u32) / 2048;
 
+    // First pass: assign compact slots and count totals.
+    let mut next_slot = 0u32;
     let mut hwidth_count = 0u32;
     let mut vwidth_count = 0u32;
     let mut blue_count = 0u32;
-    let default_width = (50 * units_per_em as u32) / 2048;
+    let mut slot_assignments: Vec<Option<u32>> = vec![None; STYLE_SLOTS];
 
     for (i, metrics) in metrics_arr.iter().enumerate() {
         if metrics.blue_refs.is_empty() {
-            out.style_ids[i] = 0xFFFFu32;
             continue;
         }
-
-        out.style_ids[i] = out.num_used_styles;
-        out.num_used_styles += 1;
-
+        slot_assignments[i] = Some(next_slot);
+        next_slot += 1;
         hwidth_count += metrics.hwidths.len() as u32;
         vwidth_count += metrics.vwidths.len() as u32;
         blue_count += metrics.blue_refs.len() as u32;
-
         if windows_compatibility {
             blue_count += 2;
         }
     }
+    let num_used_styles = next_slot;
 
     let buf_len = CVTL_MAX_RUNTIME
-        + out.num_used_styles
-        + 2 * out.num_used_styles
-        + 2 * out.num_used_styles
+        + num_used_styles
+        + 2 * num_used_styles
+        + 2 * num_used_styles
         + hwidth_count
         + vwidth_count
         + 2 * blue_count;
@@ -180,17 +167,18 @@ fn build_cvt_blob(
     let mut bytecode = Bytecode::new();
 
     let runtime_header_bytes =
-        ((CVTL_MAX_RUNTIME + out.num_used_styles + 2 * out.num_used_styles) * 2) as usize;
+        ((CVTL_MAX_RUNTIME + num_used_styles + 2 * num_used_styles) * 2) as usize;
     bytecode.extend(std::iter::repeat_n(0u8, runtime_header_bytes));
 
-    let cvt_offset = bytecode.len() as u32;
+    let cvt_offset_base = bytecode.len() as u32;
+    let mut style_offsets: IndexMap<StyleIndex, StyleCvtData> = IndexMap::new();
 
     for (i, metrics) in metrics_arr.iter().enumerate() {
-        out.cvt_offsets[i] = ((bytecode.len() as u32) - cvt_offset) >> 1;
-
-        if out.style_ids[i] == 0xFFFFu32 {
+        let Some(slot) = slot_assignments[i] else {
             continue;
-        }
+        };
+
+        let cvt_offset = ((bytecode.len() as u32) - cvt_offset_base) >> 1;
 
         let metric_blue_count = metrics.blue_refs.len();
         let total_blue_count = if windows_compatibility {
@@ -205,7 +193,6 @@ fn build_cvt_blob(
             .copied()
             .unwrap_or(default_width as u16);
         bytecode.push_word(hstd as u32);
-
         for &w in &metrics.hwidths {
             bytecode.push_word(w as u32);
         }
@@ -216,17 +203,15 @@ fn build_cvt_blob(
             .copied()
             .unwrap_or(default_width as u16);
         bytecode.push_word(vstd as u32);
-
         for &w in &metrics.vwidths {
             bytecode.push_word(w as u32);
         }
 
-        out.cvt_blue_adjustment_offsets[i] = 0xFFFFu32;
+        let mut blue_adjustment_offset = 0xFFFFu32;
 
         for &ref_val in &metrics.blue_refs {
             bytecode.push_word(ref_val as u32);
         }
-
         if windows_compatibility {
             bytecode.push_word(0);
             bytecode.push_word(0);
@@ -239,28 +224,36 @@ fn build_cvt_blob(
             .enumerate()
         {
             bytecode.push_word(shoot_val as u32);
-
             if adjustment != 0 {
-                out.cvt_blue_adjustment_offsets[i] = j as u32;
+                blue_adjustment_offset = j as u32;
             }
         }
-
         if windows_compatibility {
             bytecode.push_word(0);
             bytecode.push_word(0);
         }
 
-        out.cvt_horz_width_sizes[i] = metrics.hwidths.len() as u32;
-        out.cvt_vert_width_sizes[i] = metrics.vwidths.len() as u32;
-        out.cvt_blue_zone_sizes[i] = total_blue_count as u32;
+        style_offsets.insert(
+            StyleIndex(i),
+            StyleCvtData {
+                slot,
+                cvt_offset,
+                horz_width_size: metrics.hwidths.len() as u32,
+                vert_width_size: metrics.vwidths.len() as u32,
+                blue_zone_size: total_blue_count as u32,
+                blue_adjustment_offset,
+            },
+        );
     }
 
     if bytecode.len() as u32 != buf_len_bytes {
         return Err(AutohintError::InvalidTable);
     }
 
-    out.bytecode = bytecode;
-    Ok(out)
+    Ok(CvtBlobData {
+        bytecode,
+        style_offsets,
+    })
 }
 
 fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
@@ -273,15 +266,16 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
     let mut style_metrics = vec![];
 
     for style_idx in 0..STYLE_SLOTS {
+        let style_key = StyleIndex(style_idx);
         let glyph_id = sample_glyphs
-            .get(&style_idx)
+            .get(&style_key)
             .copied()
             .unwrap_or_else(|| GlyphId::new(0));
         match compute_style_metrics(font, style_idx, glyph_id) {
             Ok(metrics) => {
                 if metrics.blue_refs.is_empty() {
                     let sfnt_mut = &mut font.sfnt;
-                    sfnt_mut.sample_glyphs.shift_remove(&style_idx);
+                    sfnt_mut.sample_glyphs.shift_remove(&style_key);
                     replace_style_with_fallback(sfnt_mut, style_idx, fallback_style as u16);
                 }
                 style_metrics.push(metrics);
@@ -302,7 +296,7 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
         units_per_em as u16,
     )?;
 
-    if blob_data.num_used_styles == 0 && !font.args.symbol {
+    if blob_data.style_offsets.is_empty() && !font.args.symbol {
         return Err(AutohintError::NoUsableStyleMetrics);
     }
     let glyf_data = font
@@ -310,13 +304,7 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
         .as_mut()
         .ok_or(AutohintError::InvalidTable)?;
 
-    glyf_data.num_used_styles = blob_data.num_used_styles;
-    glyf_data.style_ids = blob_data.style_ids;
-    glyf_data.cvt_offsets = blob_data.cvt_offsets;
-    glyf_data.cvt_horz_width_sizes = blob_data.cvt_horz_width_sizes;
-    glyf_data.cvt_vert_width_sizes = blob_data.cvt_vert_width_sizes;
-    glyf_data.cvt_blue_zone_sizes = blob_data.cvt_blue_zone_sizes;
-    glyf_data.cvt_blue_adjustment_offsets = blob_data.cvt_blue_adjustment_offsets;
+    glyf_data.style_offsets = blob_data.style_offsets.clone();
 
     Ok(blob_data)
 }
