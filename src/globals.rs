@@ -1,6 +1,6 @@
 use crate::{
     font::Font,
-    style::{GlyphStyle, STYLE_COUNT, STYLE_INDEX_UNASSIGNED},
+    style::{GlyphStyle, STYLE_INDEX_UNASSIGNED},
     AutohintError,
 };
 use indexmap::IndexMap;
@@ -67,9 +67,9 @@ pub(crate) fn compute_style_coverage(
     debug_dump: bool,
     face_index: i32,
     num_faces: i32,
-) -> Result<(Vec<GlyphStyle>, Vec<u32>), AutohintError> {
+) -> Result<(Vec<GlyphStyle>, IndexMap<usize, GlyphId>), AutohintError> {
     let mut glyph_styles_out = vec![GlyphStyle::unassigned(); glyph_count];
-    let mut sample_glyphs_map: IndexMap<usize, u32> = IndexMap::new();
+    let mut sample_glyphs_map: IndexMap<usize, GlyphId> = IndexMap::new();
 
     fn propagate_style_to_composites(
         gindex: usize,
@@ -103,7 +103,7 @@ pub(crate) fn compute_style_coverage(
 
     fn dump_style_coverage(
         glyph_styles: &[GlyphStyle],
-        sample_glyphs: &IndexMap<usize, u32>,
+        sample_glyphs: &IndexMap<usize, GlyphId>,
         face_index: i32,
         num_faces: i32,
     ) {
@@ -184,7 +184,9 @@ pub(crate) fn compute_style_coverage(
 
         if let Some(skrifa_style) = styles.style_index(gid as u32) {
             style_index = skrifa_style as u16;
-            sample_glyphs_map.entry(skrifa_style).or_insert(gid as u32);
+            sample_glyphs_map
+                .entry(skrifa_style)
+                .or_insert(GlyphId::new(gid as u32));
         }
 
         *style_out = GlyphStyle::new(style_index, is_digit, is_non_base);
@@ -211,13 +213,5 @@ pub(crate) fn compute_style_coverage(
         dump_style_coverage(&glyph_styles_out, &sample_glyphs_map, face_index, num_faces);
     }
 
-    // Unwind IndexMap to Vec<u32> sized to STYLE_COUNT with 0s for missing entries.
-    let mut sample_glyphs_out = vec![0u32; STYLE_COUNT];
-    for (ta_style_idx, glyph_id) in sample_glyphs_map.iter() {
-        if *ta_style_idx < sample_glyphs_out.len() {
-            sample_glyphs_out[*ta_style_idx] = *glyph_id;
-        }
-    }
-
-    Ok((glyph_styles_out, sample_glyphs_out))
+    Ok((glyph_styles_out, sample_glyphs_map))
 }

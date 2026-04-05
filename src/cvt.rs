@@ -6,7 +6,7 @@ use crate::{
 };
 use skrifa::{
     outline::{compute_unscaled_style_metrics_exported, STYLE_CLASSES},
-    FontRef, Tag,
+    FontRef, GlyphId, Tag,
 };
 
 // From tabytecode.h: CVT runtime section size
@@ -37,9 +37,9 @@ pub(crate) fn build_cvt_table_store(font: &mut Font) -> Result<(), AutohintError
 fn compute_style_metrics(
     font: &mut Font,
     style_index: usize,
-    sample_glyph: u32,
+    sample_glyph: GlyphId,
 ) -> Result<StyleMetrics, AutohintError> {
-    if sample_glyph == 0 {
+    if sample_glyph.to_u32() == 0 {
         return Err(AutohintError::MissingStyleSampleGlyph);
     }
 
@@ -270,38 +270,37 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
         crate::orchestrate::script_to_index(&font.args.fallback_script),
     );
 
-    let mut style_metrics: [StyleMetrics; STYLE_SLOTS] =
-        core::array::from_fn(|_| StyleMetrics::default());
+    let mut style_metrics = vec![];
 
     for style_idx in 0..STYLE_SLOTS {
-        let glyph_id = sample_glyphs.get(style_idx).copied().unwrap_or(0);
+        let glyph_id = sample_glyphs
+            .get(&style_idx)
+            .copied()
+            .unwrap_or_else(|| GlyphId::new(0));
         match compute_style_metrics(font, style_idx, glyph_id) {
             Ok(metrics) => {
-                style_metrics[style_idx] = metrics;
+                if metrics.blue_refs.is_empty() {
+                    let sfnt_mut = &mut font.sfnt;
+                    sfnt_mut.sample_glyphs.shift_remove(&style_idx);
+                    replace_style_with_fallback(sfnt_mut, style_idx, fallback_style as u16);
+                }
+                style_metrics.push(metrics);
             }
-            Err(AutohintError::MissingStyleSampleGlyph) => continue,
+            Err(AutohintError::MissingStyleSampleGlyph) => {
+                style_metrics.push(StyleMetrics::default());
+                continue;
+            }
             Err(error) => return Err(error),
-        }
-
-        if style_metrics[style_idx].blue_refs.is_empty() {
-            let sfnt_mut = &mut font.sfnt;
-            if style_idx < sfnt_mut.sample_glyphs.len() {
-                sfnt_mut.sample_glyphs[style_idx] = 0;
-            }
-            replace_style_with_fallback(sfnt_mut, style_idx, fallback_style as u16);
         }
     }
 
     let units_per_em = crate::maxp::units_per_em_in_font_binary(&font.in_buf)?;
 
-    let blob_data = match build_cvt_blob(
+    let blob_data = build_cvt_blob(
         &style_metrics,
         font.args.windows_compatibility,
         units_per_em as u16,
-    ) {
-        Ok(blob) => blob,
-        Err(error) => return Err(error),
-    };
+    )?;
 
     if blob_data.num_used_styles == 0 && !font.args.symbol {
         return Err(AutohintError::NoUsableStyleMetrics);

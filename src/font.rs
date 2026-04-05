@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use skrifa::{
     raw::{FontData, FontRead as _, TableProvider},
     FontRef, GlyphId, GlyphId16, Tag,
@@ -42,7 +43,7 @@ impl TableEntry {
 pub(crate) struct Sfnt {
     pub(crate) glyph_count: c_long,
     pub(crate) glyph_styles: Vec<crate::style::GlyphStyle>,
-    pub(crate) sample_glyphs: Vec<u32>,
+    pub(crate) sample_glyphs: IndexMap<usize, GlyphId>,
     pub(crate) increase_x_height: c_uint,
     pub(crate) max_composite_points: u16,
     pub(crate) max_composite_contours: u16,
@@ -58,7 +59,7 @@ impl Default for Sfnt {
         Self {
             glyph_count: 0,
             glyph_styles: Vec::new(),
-            sample_glyphs: Vec::new(),
+            sample_glyphs: IndexMap::new(),
             increase_x_height: 0,
             max_composite_points: 0,
             max_composite_contours: 0,
