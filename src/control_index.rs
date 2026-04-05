@@ -1,9 +1,7 @@
 use skrifa::GlyphId;
 
-use crate::{font::Font, intset::IntSet, AutohintError};
+use crate::{font::Font, intset::IntSet, style::GlyphStyle, AutohintError};
 use std::collections::{BTreeMap, HashMap};
-
-const TA_DIGIT: u16 = 0x8000;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ResolvedControlEntry {
@@ -178,8 +176,8 @@ pub(crate) fn control_apply_coverage(font: &mut Font) {
             continue;
         }
 
-        glyph_styles[glyph_idx] &= TA_DIGIT;
-        glyph_styles[glyph_idx] |= style;
+        // Apply the style override while preserving the is_digit flag
+        glyph_styles[glyph_idx] = GlyphStyle::new(style, glyph_styles[glyph_idx].is_digit, glyph_styles[glyph_idx].is_non_base);
     }
 }
 

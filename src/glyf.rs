@@ -8,6 +8,7 @@ use crate::{
     error::AutohintError,
     font::Font,
     opcodes::{CvtLocations, ADD, PUSHB_2, PUSHB_3, RCVT, WCVTP},
+    style::{GlyphStyle, STYLE_COUNT, STYLE_INDEX_UNASSIGNED},
 };
 use skrifa::{
     outline::{compute_hint_plan_exported, ExportedHintPlan, STYLE_CLASSES},
@@ -23,9 +24,8 @@ use write_fonts::{
         head::Head,
     },
 };
-pub const TA_STYLE_MAX: usize = 84;
-const TA_STYLE_MASK: u16 = 0x3FFF;
-const TA_STYLE_UNASSIGNED: u16 = TA_STYLE_MASK;
+
+pub const STYLE_SLOTS: usize = STYLE_COUNT;
 
 type TaRsBuildGlyphInstructions =
     Option<fn(&mut Font, usize, GlyphId) -> Result<i32, AutohintError>>;
@@ -54,40 +54,40 @@ pub(crate) struct GlyfData {
     pub glyphs: Vec<ScaledGlyph>,
 
     // Merged style coverage snapshot used by TA_sfnt_handle_coverage/adjust_coverage.
-    pub master_glyph_styles: Vec<u16>,
+    pub master_glyph_styles: Vec<GlyphStyle>,
     /* for coverage bookkeeping */
     pub adjusted: u8,
 
     /* styles present in a font get a running number; */
     /* unavailable styles get value 0xFFFF */
-    pub style_ids: [u32; TA_STYLE_MAX],
+    pub style_ids: [u32; STYLE_SLOTS],
     pub num_used_styles: u32,
 
     /* we have separate CVT data for each style */
-    pub cvt_offsets: [u32; TA_STYLE_MAX],
-    pub cvt_horz_width_sizes: [u32; TA_STYLE_MAX],
-    pub cvt_vert_width_sizes: [u32; TA_STYLE_MAX],
-    pub cvt_blue_zone_sizes: [u32; TA_STYLE_MAX],
-    pub cvt_blue_adjustment_offsets: [u32; TA_STYLE_MAX],
+    pub cvt_offsets: [u32; STYLE_SLOTS],
+    pub cvt_horz_width_sizes: [u32; STYLE_SLOTS],
+    pub cvt_vert_width_sizes: [u32; STYLE_SLOTS],
+    pub cvt_blue_zone_sizes: [u32; STYLE_SLOTS],
+    pub cvt_blue_adjustment_offsets: [u32; STYLE_SLOTS],
 }
 
-fn merge_style_coverage(master: &mut [u16], current: &[u16]) {
-    for (master_bits, current_bits) in master.iter_mut().zip(current.iter()) {
-        if (*current_bits & TA_STYLE_MASK) != TA_STYLE_UNASSIGNED {
-            *master_bits = *current_bits;
+fn merge_style_coverage(master: &mut [GlyphStyle], current: &[GlyphStyle]) {
+    for (master_style, current_style) in master.iter_mut().zip(current.iter()) {
+        if !current_style.is_unassigned() {
+            *master_style = *current_style;
         }
     }
 }
 
 fn fallback_style_name(style_index: usize) -> &'static str {
-    crate::globals::ta_style_to_skrifa_style(style_index)
-        .and_then(|idx| STYLE_CLASSES.get(idx))
+    STYLE_CLASSES
+        .get(style_index)
         .map(|style| style.name)
         .unwrap_or("(unknown)")
 }
 
 fn log_unassigned_glyphs(
-    glyph_styles: &[u16],
+    glyph_styles: &[GlyphStyle],
     fallback_style: usize,
     sfnt_idx: usize,
     num_sfnts: usize,
@@ -110,8 +110,8 @@ fn log_unassigned_glyphs(
     }
 
     let mut count = 0usize;
-    for (idx, style_bits) in glyph_styles.iter().enumerate() {
-        if (*style_bits & TA_STYLE_MASK) == TA_STYLE_UNASSIGNED {
+    for (idx, style) in glyph_styles.iter().enumerate() {
+        if style.is_unassigned() {
             if count.is_multiple_of(10) {
                 message.push(' ');
             }
@@ -140,13 +140,13 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
         glyphs: Vec::new(),
         master_glyph_styles: Vec::new(),
         adjusted: 0,
-        style_ids: [0; TA_STYLE_MAX],
+        style_ids: [0; STYLE_SLOTS],
         num_used_styles: 0,
-        cvt_offsets: [0; TA_STYLE_MAX],
-        cvt_horz_width_sizes: [0; TA_STYLE_MAX],
-        cvt_vert_width_sizes: [0; TA_STYLE_MAX],
-        cvt_blue_zone_sizes: [0; TA_STYLE_MAX],
-        cvt_blue_adjustment_offsets: [0; TA_STYLE_MAX],
+        cvt_offsets: [0; STYLE_SLOTS],
+        cvt_horz_width_sizes: [0; STYLE_SLOTS],
+        cvt_vert_width_sizes: [0; STYLE_SLOTS],
+        cvt_blue_zone_sizes: [0; STYLE_SLOTS],
+        cvt_blue_adjustment_offsets: [0; STYLE_SLOTS],
     };
 
     let sfnt_max_components = font.sfnt.max_components;
@@ -785,15 +785,11 @@ fn build_glyphs_rs(
 pub(crate) fn compute_hint_plan_rs(
     font: &Font,
     glyph_id: GlyphId,
-    ta_style: usize,
+    style_index: usize,
     is_non_base: u8,
     is_digit: u8,
     ppem: u16,
 ) -> Result<ExportedHintPlan, AutohintError> {
-    let Some(skrifa_style) = crate::globals::ta_style_to_skrifa_style(ta_style) else {
-        return Err(AutohintError::UnportedError(0x23));
-    };
-
     let ttf_bytes = font.build_ttf();
     let font = skrifa::FontRef::new(&ttf_bytes)?;
 
@@ -801,7 +797,7 @@ pub(crate) fn compute_hint_plan_rs(
         &font,
         &[],
         glyph_id.to_u32(),
-        skrifa_style,
+        style_index,
         is_non_base != 0,
         is_digit != 0,
         ppem as f32,
@@ -828,17 +824,16 @@ pub(crate) fn handle_coverage(font: &mut Font) -> Result<(), AutohintError> {
     let (glyph_styles, sample_glyphs_local) = crate::globals::compute_style_coverage(
         font,
         glyph_count as usize,
-        TA_STYLE_UNASSIGNED,
+        STYLE_INDEX_UNASSIGNED,
         font.args.debug,
         0,
         1,
     )?;
-    let sample_glyphs = sample_glyphs_local;
 
     {
         let sfnt = &mut font.sfnt;
         sfnt.glyph_styles = glyph_styles;
-        sfnt.sample_glyphs = *sample_glyphs.as_array().unwrap();
+        sfnt.sample_glyphs = sample_glyphs_local;
     }
 
     let data = font
@@ -934,9 +929,9 @@ pub(crate) fn adjust_coverage(font: &mut Font) {
     }
 
     for style_bits in data_ref.master_glyph_styles.iter_mut() {
-        if (*style_bits & TA_STYLE_MASK) == TA_STYLE_UNASSIGNED {
-            *style_bits &= !TA_STYLE_MASK;
-            *style_bits |= fallback_style;
+        if style_bits.is_unassigned() {
+            *style_bits =
+                GlyphStyle::new(fallback_style, style_bits.is_digit, style_bits.is_non_base);
         }
     }
 

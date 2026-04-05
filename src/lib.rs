@@ -22,6 +22,7 @@ mod opcodes;
 mod orchestrate;
 mod prep;
 mod recorder;
+mod style;
 mod style_metadata;
 
 pub use args::Args;

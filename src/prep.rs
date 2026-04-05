@@ -2,9 +2,10 @@
 use crate::{
     bytecode::{high, low, Bytecode, CONTROL_DELTA_PPEM_MIN},
     font::{Font, TA_PROP_INCREASE_X_HEIGHT_MIN},
-    glyf::{GlyfData, TA_STYLE_MAX},
+    glyf::GlyfData,
     intset::IntSet,
     opcodes::*,
+    style::STYLE_COUNT,
     AutohintError,
 };
 use skrifa::Tag;
@@ -119,7 +120,7 @@ pub(crate) fn build_prep_table(
         )
     };
     let (gray_stem_width_mode, gdi_cleartype_stem_width_mode, dw_cleartype_stem_width_mode) =
-        crate::orchestrate::parse_stem_width_mode_values(&font.args.stem_width_mode)?;
+        crate::args::parse_stem_width_mode_values(&font.args.stem_width_mode)?;
     let mut bytecode = Bytecode::new();
     if let Some(x_height_snapping_exceptions) = x_height_snapping_exceptions.as_ref() {
         let (bc, nse) = build_number_set(x_height_snapping_exceptions);
@@ -144,7 +145,7 @@ pub(crate) fn build_prep_table(
         bytecode.push_u8(PUSHB_1 - 1 + num_used_styles + 2);
     }
     // Iterate through styles in reverse, skipping unused ones (style_ids[i] == 0xFFFF)
-    for i in (0..TA_STYLE_MAX).rev() {
+    for i in (0..STYLE_COUNT).rev() {
         if glyf_data.style_ids[i] == 0xFFFF {
             continue;
         }
@@ -162,7 +163,7 @@ pub(crate) fn build_prep_table(
         bytecode.push_u8(PUSHB_1 - 1 + 2 * num_used_styles + 2);
     }
     // Iterate through styles for vertical widths: offset and size
-    for i in (0..TA_STYLE_MAX).rev() {
+    for i in (0..STYLE_COUNT).rev() {
         if glyf_data.style_ids[i] == 0xFFFF {
             continue;
         }
@@ -187,7 +188,7 @@ pub(crate) fn build_prep_table(
         bytecode.push_u8(PUSHB_1 - 1 + 2 * num_used_styles + 2);
     }
     // Iterate through styles for blue shoots
-    for i in (0..TA_STYLE_MAX).rev() {
+    for i in (0..STYLE_COUNT).rev() {
         if glyf_data.style_ids[i] == 0xFFFF {
             continue;
         }
@@ -223,7 +224,7 @@ pub(crate) fn build_prep_table(
         bytecode.push_u8(PUSHW_1 - 1 + num_used_styles + 2);
     }
     // Iterate through styles for vertical widths offsets
-    for i in (0..TA_STYLE_MAX).rev() {
+    for i in (0..STYLE_COUNT).rev() {
         if glyf_data.style_ids[i] == 0xFFFF {
             continue;
         }
@@ -244,7 +245,7 @@ pub(crate) fn build_prep_table(
         bytecode.push_u8(PUSHW_1 - 1 + num_used_styles + 2);
     }
     // Iterate through styles for vertical widths sizes
-    for i in (0..TA_STYLE_MAX).rev() {
+    for i in (0..STYLE_COUNT).rev() {
         if glyf_data.style_ids[i] == 0xFFFF {
             continue;
         }
@@ -281,7 +282,7 @@ pub(crate) fn build_prep_table(
         bytecode.push_u8(PUSHB_1 - 1 + 2 * num_used_styles + 2);
     }
     // Iterate through styles for blue refs offsets and sizes
-    for i in (0..TA_STYLE_MAX).rev() {
+    for i in (0..STYLE_COUNT).rev() {
         if glyf_data.style_ids[i] == 0xFFFF {
             continue;
         }

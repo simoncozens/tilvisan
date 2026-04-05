@@ -1,4 +1,4 @@
-use crate::{control::NumberSetAst, orchestrate::parse_stem_width_mode_values, AutohintError};
+use crate::{args::parse_stem_width_mode_values, control::NumberSetAst, AutohintError};
 use std::collections::BTreeMap;
 
 #[derive(Default, Debug, Clone)]

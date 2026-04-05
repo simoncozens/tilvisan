@@ -25,6 +25,7 @@ skrifa = { version = "0.41.0", git = "https://github.com/googlefonts/fontations"
 ] }
 thiserror = "2.0.18"
 env_logger = "0.11.10"
+indexmap = "2.13.1"
 [build-dependencies]
 pkg-config = "0.3"
 cbindgen = "0.27"

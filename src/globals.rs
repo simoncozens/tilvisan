@@ -1,7 +1,9 @@
 use crate::{
-    font::{Font, TA_STYLE_MAX},
+    font::Font,
+    style::{GlyphStyle, STYLE_COUNT, STYLE_INDEX_UNASSIGNED},
     AutohintError,
 };
+use indexmap::IndexMap;
 use skrifa::{
     outline::{GlyphStyles, STYLE_CLASSES},
     raw::{
@@ -11,111 +13,51 @@ use skrifa::{
     FontRef, GlyphId, MetadataProvider,
 };
 
-const TA_STYLE_MASK: u16 = 0x3FFF;
-const TA_STYLE_UNASSIGNED: u16 = TA_STYLE_MASK;
-const TA_DIGIT: u16 = 0x8000;
-const TA_NONBASE: u16 = 0x4000;
-
-// Maps skrifa's STYLE_CLASSES index to ttfautohint's TA_STYLE_* index.
-// `None` means there is no equivalent C style and the glyph remains unassigned.
-pub(crate) fn skrifa_style_to_ta_style(style: usize) -> Option<u16> {
-    match style {
-        0 => Some(0),   // ADLM_DFLT
-        1 => Some(1),   // ARAB_DFLT
-        2 => Some(2),   // ARMN_DFLT
-        3 => Some(3),   // AVST_DFLT
-        4 => Some(4),   // BAMU_DFLT
-        5 => Some(5),   // BENG_DFLT
-        6 => Some(6),   // BUHD_DFLT
-        7 => Some(7),   // CAKM_DFLT
-        8 => Some(8),   // CANS_DFLT
-        9 => Some(9),   // CARI_DFLT
-        10 => Some(10), // CHER_DFLT
-        11 => Some(11), // COPT_DFLT
-        12 => Some(12), // CPRT_DFLT
-        13 => Some(13), // CYRL_C2CP
-        14 => Some(14), // CYRL_C2SC
-        15 => Some(15), // CYRL_ORDN
-        16 => Some(16), // CYRL_PCAP
-        17 => None,     // CYRL_RUBY (not present in C style list)
-        18 => Some(17), // CYRL_SINF
-        19 => Some(18), // CYRL_SMCP
-        20 => Some(19), // CYRL_SUBS
-        21 => Some(20), // CYRL_SUPS
-        22 => Some(21), // CYRL_TITL
-        23 => Some(22), // CYRL_DFLT
-        24 => Some(23), // DEVA_DFLT
-        25 => Some(24), // DSRT_DFLT
-        26 => Some(25), // ETHI_DFLT
-        27 => Some(26), // GEOR_DFLT
-        28 => Some(27), // GEOK_DFLT
-        29 => Some(28), // GLAG_DFLT
-        30 => Some(29), // GOTH_DFLT
-        31 => Some(30), // GREK_C2CP
-        32 => Some(31), // GREK_C2SC
-        33 => Some(32), // GREK_ORDN
-        34 => Some(33), // GREK_PCAP
-        35 => None,     // GREK_RUBY (not present in C style list)
-        36 => Some(34), // GREK_SINF
-        37 => Some(35), // GREK_SMCP
-        38 => Some(36), // GREK_SUBS
-        39 => Some(37), // GREK_SUPS
-        40 => Some(38), // GREK_TITL
-        41 => Some(39), // GREK_DFLT
-        42 => Some(40), // GUJR_DFLT
-        43 => Some(41), // GURU_DFLT
-        44 => Some(42), // HEBR_DFLT
-        45 => Some(43), // HMNP_DFLT
-        46 => Some(44), // KALI_DFLT
-        47 => Some(45), // KHMR_DFLT
-        48 => Some(46), // KHMS_DFLT
-        49 => Some(47), // KNDA_DFLT
-        50 => Some(48), // LAO_DFLT
-        51 => Some(49), // LATN_C2CP
-        52 => Some(50), // LATN_C2SC
-        53 => Some(51), // LATN_ORDN
-        54 => Some(52), // LATN_PCAP
-        55 => None,     // LATN_RUBY (not present in C style list)
-        56 => Some(53), // LATN_SINF
-        57 => Some(54), // LATN_SMCP
-        58 => Some(55), // LATN_SUBS
-        59 => Some(56), // LATN_SUPS
-        60 => Some(57), // LATN_TITL
-        61 => Some(58), // LATN_DFLT
-        62 => Some(59), // LATB_DFLT
-        63 => Some(60), // LATP_DFLT
-        64 => Some(61), // LISU_DFLT
-        65 => Some(62), // MLYM_DFLT
-        66 => Some(63), // MEDF_DFLT
-        67 => Some(64), // MONG_DFLT
-        68 => Some(65), // MYMR_DFLT
-        69 => Some(83), // NONE_DFLT
-        70 => Some(67), // OLCK_DFLT
-        71 => Some(68), // ORKH_DFLT
-        72 => Some(69), // OSGE_DFLT
-        73 => Some(70), // OSMA_DFLT
-        74 => Some(71), // ROHG_DFLT
-        75 => Some(72), // SAUR_DFLT
-        76 => Some(73), // SHAW_DFLT
-        77 => Some(74), // SINH_DFLT
-        78 => Some(75), // SUND_DFLT
-        79 => Some(76), // TAML_DFLT
-        80 => Some(77), // TAVT_DFLT
-        81 => Some(78), // TELU_DFLT
-        82 => Some(79), // TFNG_DFLT
-        83 => Some(80), // THAI_DFLT
-        84 => Some(81), // VAII_DFLT
-        85 => None,     // LIMB (not present in C style list)
-        86 => None,     // ORYA (not present in C style list)
-        87 => None,     // SYLO (not present in C style list)
-        88 => None,     // TIBT (not present in C style list)
-        89 => None,     // HANI (not present in C style list)
-        _ => None,
+/// Helper to convert a tag string to a 4-byte array, padding with spaces if needed.
+fn string_to_tag_bytes(s: &str) -> Option<[u8; 4]> {
+    let bytes = s.as_bytes();
+    if bytes.len() > 4 {
+        return None; // Tag too long
     }
+    let mut tag = [b' '; 4];
+    tag[..bytes.len()].copy_from_slice(bytes);
+    Some(tag)
 }
 
-pub(crate) fn ta_style_to_skrifa_style(ta_style: usize) -> Option<usize> {
-    (0..90).find(|&skrifa_style| skrifa_style_to_ta_style(skrifa_style) == Some(ta_style as u16))
+/// Resolve a script/feature pair to a Skrifa style index.
+/// Returns the index of the first matching style in STYLE_CLASSES, or None if not found.
+pub(crate) fn resolve_script_feature_to_style_index(script: &str, feature: &str) -> Option<usize> {
+    use skrifa::Tag;
+
+    // Convert strings to tags
+    let script_bytes = string_to_tag_bytes(script)?;
+    let script_tag = Tag::new(&script_bytes);
+
+    let feature_tag = if feature.is_empty() || feature == "dflt" {
+        None
+    } else {
+        string_to_tag_bytes(feature).map(|bytes| Tag::new(&bytes))
+    };
+
+    // Search STYLE_CLASSES for a match
+    for (idx, style_class) in STYLE_CLASSES.iter().enumerate() {
+        // Check if script matches
+        if style_class.script.tag != script_tag {
+            continue;
+        }
+
+        // Check if feature matches
+        match (feature_tag, style_class.feature) {
+            // No feature requested, and style has no feature (uses DFLT)
+            (None, None) => return Some(idx),
+            // Feature requested, and style has matching feature
+            (Some(req_feat), Some(style_feat)) if req_feat == style_feat => return Some(idx),
+            // Otherwise, continue searching
+            _ => continue,
+        }
+    }
+
+    None
 }
 
 pub(crate) fn compute_style_coverage(
@@ -125,13 +67,14 @@ pub(crate) fn compute_style_coverage(
     debug_dump: bool,
     face_index: i32,
     num_faces: i32,
-) -> Result<(Vec<u16>, Vec<u32>), AutohintError> {
-    let mut glyph_styles_out = vec![TA_STYLE_UNASSIGNED; glyph_count];
-    let mut sample_glyphs_out = vec![0u32; TA_STYLE_MAX];
+) -> Result<(Vec<GlyphStyle>, Vec<u32>), AutohintError> {
+    let mut glyph_styles_out = vec![GlyphStyle::unassigned(); glyph_count];
+    let mut sample_glyphs_map: IndexMap<usize, u32> = IndexMap::new();
+
     fn propagate_style_to_composites(
         gindex: usize,
-        gstyle: u16,
-        glyph_styles_out: &mut [u16],
+        gstyle: GlyphStyle,
+        glyph_styles_out: &mut [GlyphStyle],
         composite_children: &[Vec<usize>],
         nesting_level: usize,
     ) -> Result<(), AutohintError> {
@@ -141,7 +84,7 @@ pub(crate) fn compute_style_coverage(
         }
 
         for &child in &composite_children[gindex] {
-            if (glyph_styles_out[child] & TA_STYLE_MASK) != TA_STYLE_UNASSIGNED {
+            if !glyph_styles_out[child].is_unassigned() {
                 continue;
             }
 
@@ -159,8 +102,8 @@ pub(crate) fn compute_style_coverage(
     }
 
     fn dump_style_coverage(
-        glyph_styles: &[u16],
-        sample_count: usize,
+        glyph_styles: &[GlyphStyle],
+        sample_glyphs: &IndexMap<usize, u32>,
         face_index: i32,
         num_faces: i32,
     ) {
@@ -170,17 +113,17 @@ pub(crate) fn compute_style_coverage(
             eprintln!("\nstyle coverage\n==============\n");
         }
 
-        for style_idx in 0..sample_count {
-            let style_name = crate::globals::ta_style_to_skrifa_style(style_idx)
-                .and_then(|idx| STYLE_CLASSES.get(idx))
+        for &style_idx in sample_glyphs.keys() {
+            let style_name = STYLE_CLASSES
+                .get(style_idx)
                 .map(|style| style.name)
                 .unwrap_or("(unknown)");
 
             eprintln!("{style_name}:");
 
             let mut count = 0usize;
-            for (idx, style_bits) in glyph_styles.iter().enumerate() {
-                if (style_bits & TA_STYLE_MASK) as usize == style_idx {
+            for (idx, style) in glyph_styles.iter().enumerate() {
+                if style.style_index as usize == style_idx {
                     if count.is_multiple_of(10) {
                         eprint!(" ");
                     }
@@ -234,60 +177,46 @@ pub(crate) fn compute_style_coverage(
         }
     }
 
-    for sample in sample_glyphs_out.iter_mut() {
-        *sample = 0;
-    }
-
     for (gid, style_out) in glyph_styles_out.iter_mut().enumerate() {
-        let mut style_bits = TA_STYLE_UNASSIGNED;
+        let mut style_index = STYLE_INDEX_UNASSIGNED;
+        let is_non_base = styles.is_non_base(gid as u32);
+        let is_digit = styles.is_digit(gid as u32);
 
-        if let Some(ta_style) = styles
-            .style_index(gid as u32)
-            .and_then(skrifa_style_to_ta_style)
-        {
-            style_bits = ta_style & TA_STYLE_MASK;
-
-            let ta_style_usize = ta_style as usize;
-            if ta_style_usize < sample_glyphs_out.len() && sample_glyphs_out[ta_style_usize] == 0 {
-                sample_glyphs_out[ta_style_usize] = gid as u32;
-            }
+        if let Some(skrifa_style) = styles.style_index(gid as u32) {
+            style_index = skrifa_style as u16;
+            sample_glyphs_map.entry(skrifa_style).or_insert(gid as u32);
         }
 
-        if styles.is_non_base(gid as u32) {
-            style_bits |= TA_NONBASE;
-        }
-        if styles.is_digit(gid as u32) {
-            style_bits |= TA_DIGIT;
-        }
-
-        *style_out = style_bits;
+        *style_out = GlyphStyle::new(style_index, is_digit, is_non_base);
     }
 
     for gid in 0..glyph_styles_out.len() {
         let gstyle = glyph_styles_out[gid];
-        if (gstyle & TA_STYLE_MASK) == TA_STYLE_UNASSIGNED {
+        if gstyle.is_unassigned() {
             continue;
         }
 
         propagate_style_to_composites(gid, gstyle, &mut glyph_styles_out, &composite_children, 0)?;
     }
 
-    if fallback_style != TA_STYLE_UNASSIGNED {
-        for style_bits in glyph_styles_out.iter_mut() {
-            if (*style_bits & TA_STYLE_MASK) == TA_STYLE_UNASSIGNED {
-                *style_bits &= !TA_STYLE_MASK;
-                *style_bits |= fallback_style & TA_STYLE_MASK;
+    if fallback_style != STYLE_INDEX_UNASSIGNED {
+        for style in glyph_styles_out.iter_mut() {
+            if style.is_unassigned() {
+                *style = GlyphStyle::new(fallback_style, style.is_digit, style.is_non_base);
             }
         }
     }
 
     if debug_dump {
-        dump_style_coverage(
-            &glyph_styles_out,
-            sample_glyphs_out.len(),
-            face_index,
-            num_faces,
-        );
+        dump_style_coverage(&glyph_styles_out, &sample_glyphs_map, face_index, num_faces);
+    }
+
+    // Unwind IndexMap to Vec<u32> sized to STYLE_COUNT with 0s for missing entries.
+    let mut sample_glyphs_out = vec![0u32; STYLE_COUNT];
+    for (ta_style_idx, glyph_id) in sample_glyphs_map.iter() {
+        if *ta_style_idx < sample_glyphs_out.len() {
+            sample_glyphs_out[*ta_style_idx] = *glyph_id;
+        }
     }
 
     Ok((glyph_styles_out, sample_glyphs_out))

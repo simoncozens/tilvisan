@@ -1,6 +1,7 @@
 use skrifa::{GlyphId, Tag};
 
 use crate::{
+    args::parse_stem_width_mode_values,
     control::{
         ControlEntryAst, GlyphRef, GlyphSetElem, NumberSetAst, NumberSetElem, PointMode,
         SegmentDirection,
@@ -23,7 +24,6 @@ const STEM_MODE_MIN: i32 = -1;
 const STEM_MODE_MAX: i32 = 1;
 const HINTING_RANGE_MIN_MIN: u32 = 2;
 const INCREASE_X_HEIGHT_MIN: u32 = 6;
-const TA_STYLE_NONE_DFLT: i32 = 83;
 
 fn ta_sfnt_build_glyph_instructions_cb(
     font: &mut TaFont,
@@ -45,10 +45,9 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     }
 
     let glyph_count = crate::maxp::num_glyphs_in_font_binary(&font.in_buf)?;
-    println!("Font.sfnt: {:#?}", font.sfnt);
 
     font.sfnt.glyph_count = glyph_count as c_long;
-    font.sfnt.glyph_styles = vec![0; glyph_count as usize];
+    font.sfnt.glyph_styles = vec![crate::style::GlyphStyle::unassigned(); glyph_count as usize];
 
     crate::control_index::control_build_tree_rs(font)?;
 
@@ -310,28 +309,6 @@ fn validate_options(args: &Args) -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn parse_stem_width_mode_values(mode: &str) -> Result<(i32, i32, i32), AutohintError> {
-    if mode.len() != 3 {
-        return Err(AutohintError::InvalidArgument(
-            "Stem width mode string must consist of exactly three letters".to_string(),
-        ));
-    }
-    let parse_mode = |c| match c {
-        'n' => Ok(-1),
-        'q' => Ok(0),
-        's' => Ok(1),
-        _ => Err(AutohintError::InvalidArgument(
-            "Stem width mode letter must be 'n', 'q', or 's'".to_string(),
-        )),
-    };
-    let chars: Vec<char> = mode.chars().collect();
-    Ok((
-        parse_mode(chars[0])?,
-        parse_mode(chars[1])?,
-        parse_mode(chars[2])?,
-    ))
-}
-
 fn validate_default_script(value: &str) -> io::Result<()> {
     if DEFAULT_SCRIPTS.contains(&value) {
         return Ok(());
@@ -488,15 +465,20 @@ fn parse_control_entries<P: crate::control::ControlSemanticProvider>(
                     }
                 }
 
-                let style_key = format!("{}/{}", script, feature);
-                let style_hash = style_key
-                    .as_bytes()
-                    .iter()
-                    .fold(0i64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as i64));
+                // Resolve script/feature directly to a Skrifa style index.
+                let resolved_style =
+                    crate::globals::resolve_script_feature_to_style_index(script, feature)
+                        .ok_or_else(|| AutohintError::ControlFileValidationError {
+                            entry_index: idx + 1,
+                            message: format!(
+                                "unknown or unsupported style: {}/{}",
+                                script, feature
+                            ),
+                        })?;
 
                 out.push(ResolvedControlEntry::StyleAdjust {
                     font_idx: *font_idx,
-                    style: style_hash as u16,
+                    style: resolved_style as u16,
                     glyph_indices,
                 });
             }
@@ -546,5 +528,6 @@ fn number_set_to_intset(set: &NumberSetAst, min: i32, max: i32) -> Result<IntSet
 pub(crate) fn fallback_style_for_script(script_index: i32) -> i32 {
     crate::style_metadata::default_style_for_script(script_index as usize)
         .map(|style| style as i32)
-        .unwrap_or(TA_STYLE_NONE_DFLT)
+        .or_else(|| crate::style_metadata::none_default_style().map(|style| style as i32))
+        .unwrap_or(0)
 }

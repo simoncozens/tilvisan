@@ -15,17 +15,13 @@ use crate::{
 };
 use skrifa::outline::{ExportedHintPlan, ExportedHintRecord};
 
-use crate::glyf::TA_STYLE_MAX;
+use crate::style::STYLE_COUNT;
 
 const ADDITIONAL_STACK_ELEMENTS: u16 = 20;
-const TA_STYLE_MASK: u16 = 0x3FFF;
-const TA_NONBASE: u16 = 0x4000;
-const TA_DIGIT: u16 = 0x8000;
-const TA_STYLE_NONE_DFLT: usize = 83;
 const TA_DIR_NONE: i32 = 4;
 
 fn compute_cvt_blue_offsets(font: &Font, ta_style: usize) -> Option<(u16, u16)> {
-    if ta_style >= TA_STYLE_MAX {
+    if ta_style >= STYLE_COUNT {
         return None;
     }
 
@@ -1566,7 +1562,7 @@ pub(crate) fn build_glyph_instructions(
         log_debug_heading(&format!("glyph {}", idx), '=');
     }
 
-    let ta_style = (gstyle & TA_STYLE_MASK) as usize;
+    let ta_style = gstyle.style_index as usize;
     let mut use_gstyle_data = true;
 
     let mut is_composite_glyph = glyph_ref.num_components() != 0;
@@ -1593,9 +1589,7 @@ pub(crate) fn build_glyph_instructions(
         bytecode.extend(subglyph);
         use_gstyle_data = false;
     } else if font_ref.args.fallback_scaling {
-        if ta_style == TA_STYLE_NONE_DFLT {
-            use_gstyle_data = false;
-        } else if ta_style == fallback_style {
+        if ta_style == fallback_style {
             let recorder = RustRecorder::new(&glyph_ref);
             let (emitted, num_args) =
                 build_glyph_scaler_bytecode(&recorder, font_ref, idx, font_ref.args.composites)?;
@@ -1631,8 +1625,8 @@ pub(crate) fn build_glyph_instructions(
                     glyph_num_points,
                     size as u16,
                     ta_style,
-                    (gstyle & TA_NONBASE) != 0,
-                    (gstyle & TA_DIGIT) != 0,
+                    gstyle.is_non_base,
+                    gstyle.is_digit,
                 )?;
 
                 if action_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
@@ -1781,8 +1775,8 @@ pub(crate) fn build_glyph_instructions(
                 glyph_num_points,
                 size as u16,
                 ta_style,
-                (gstyle & TA_NONBASE) != 0,
-                (gstyle & TA_DIGIT) != 0,
+                gstyle.is_non_base,
+                gstyle.is_digit,
             )?;
 
             if action_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
@@ -1921,7 +1915,7 @@ pub(crate) fn build_glyph_instructions(
         bytecode.extend(emitted);
     }
 
-    if use_gstyle_data && (gstyle & TA_NONBASE) != 0 {
+    if use_gstyle_data && gstyle.is_non_base {
         glyph_ref.append_ignore_std_width();
         bytecode.extend_bytes(&[PUSHB_2, CvtLocations::cvtl_ignore_std_width as u8, 0, WCVTP]);
     }

@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::AutohintError;
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "ttfautohint", version = "1.8.4", about = "TrueType autohinter", long_about = None)]
 pub struct Args {
@@ -157,4 +159,26 @@ impl Default for Args {
             epoch: None,
         }
     }
+}
+
+pub(crate) fn parse_stem_width_mode_values(mode: &str) -> Result<(i32, i32, i32), AutohintError> {
+    if mode.len() != 3 {
+        return Err(AutohintError::InvalidArgument(
+            "Stem width mode string must consist of exactly three letters".to_string(),
+        ));
+    }
+    let parse_mode = |c| match c {
+        'n' => Ok(-1),
+        'q' => Ok(0),
+        's' => Ok(1),
+        _ => Err(AutohintError::InvalidArgument(
+            "Stem width mode letter must be 'n', 'q', or 's'".to_string(),
+        )),
+    };
+    let chars: Vec<char> = mode.chars().collect();
+    Ok((
+        parse_mode(chars[0])?,
+        parse_mode(chars[1])?,
+        parse_mode(chars[2])?,
+    ))
 }

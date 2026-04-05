@@ -1,6 +1,7 @@
 use crate::{
     bytecode::Bytecode,
     font::{Font, Sfnt},
+    style::STYLE_COUNT,
     AutohintError,
 };
 use skrifa::{
@@ -11,11 +12,10 @@ use skrifa::{
 const FT_ERR_INVALID_TABLE: u32 = 0x23;
 const TA_ERR_HINTER_OVERFLOW: u32 = 0xF0;
 const TA_ERR_MISSING_GLYPH: u32 = 0xF1;
-const TA_STYLE_MASK: u16 = 0x3FFF;
 
 // From tabytecode.h: CVT runtime section size
 const CVTL_MAX_RUNTIME: u32 = 7;
-const TA_STYLE_MAX: usize = 84;
+const STYLE_SLOTS: usize = STYLE_COUNT;
 
 #[derive(Default)]
 pub struct TaRsStyleMetrics {
@@ -40,13 +40,9 @@ pub(crate) fn build_cvt_table_store(font: &mut Font) -> Result<(), AutohintError
 
 fn compute_style_metrics_rs(
     font: &mut Font,
-    ta_style: usize,
+    style_index: usize,
     sample_glyph: u32,
 ) -> Result<TaRsStyleMetrics, u32> {
-    let Some(skrifa_style) = crate::globals::ta_style_to_skrifa_style(ta_style) else {
-        return Err(TA_ERR_MISSING_GLYPH);
-    };
-
     if sample_glyph == 0 {
         return Err(TA_ERR_MISSING_GLYPH);
     }
@@ -56,7 +52,7 @@ fn compute_style_metrics_rs(
         return Err(FT_ERR_INVALID_TABLE);
     };
 
-    let Some(style_class) = STYLE_CLASSES.get(skrifa_style) else {
+    let Some(style_class) = STYLE_CLASSES.get(style_index) else {
         return Err(FT_ERR_INVALID_TABLE);
     };
 
@@ -106,12 +102,12 @@ fn compute_style_metrics_rs(
 pub struct CvtBlobData {
     pub bytecode: Bytecode,
     pub num_used_styles: u32,
-    pub style_ids: [u32; TA_STYLE_MAX],
-    pub cvt_offsets: [u32; TA_STYLE_MAX],
-    pub cvt_horz_width_sizes: [u32; TA_STYLE_MAX],
-    pub cvt_vert_width_sizes: [u32; TA_STYLE_MAX],
-    pub cvt_blue_zone_sizes: [u32; TA_STYLE_MAX],
-    pub cvt_blue_adjustment_offsets: [u32; TA_STYLE_MAX],
+    pub style_ids: [u32; STYLE_SLOTS],
+    pub cvt_offsets: [u32; STYLE_SLOTS],
+    pub cvt_horz_width_sizes: [u32; STYLE_SLOTS],
+    pub cvt_vert_width_sizes: [u32; STYLE_SLOTS],
+    pub cvt_blue_zone_sizes: [u32; STYLE_SLOTS],
+    pub cvt_blue_adjustment_offsets: [u32; STYLE_SLOTS],
 }
 
 fn checked_i32_to_u16(v: i32) -> Result<u16, u32> {
@@ -128,9 +124,8 @@ fn replace_style_with_fallback(sfnt: &mut Sfnt, style_idx: usize, fallback_style
     }
 
     for glyph_style in sfnt.glyph_styles.iter_mut() {
-        if (*glyph_style & TA_STYLE_MASK) == style_idx as u16 {
-            *glyph_style &= !TA_STYLE_MASK;
-            *glyph_style |= fallback_style;
+        if glyph_style.style_index as usize == style_idx {
+            glyph_style.style_index = fallback_style;
         }
     }
 }
@@ -140,19 +135,19 @@ fn build_cvt_blob_rs(
     windows_compatibility: bool,
     units_per_em: u16,
 ) -> Result<CvtBlobData, u32> {
-    if metrics_arr.len() != TA_STYLE_MAX {
+    if metrics_arr.len() != STYLE_SLOTS {
         return Err(FT_ERR_INVALID_TABLE);
     }
 
     let mut out = CvtBlobData {
         bytecode: Bytecode::new(),
         num_used_styles: 0,
-        style_ids: [0xFFFFu32; TA_STYLE_MAX],
-        cvt_offsets: [0; TA_STYLE_MAX],
-        cvt_horz_width_sizes: [0; TA_STYLE_MAX],
-        cvt_vert_width_sizes: [0; TA_STYLE_MAX],
-        cvt_blue_zone_sizes: [0; TA_STYLE_MAX],
-        cvt_blue_adjustment_offsets: [0xFFFFu32; TA_STYLE_MAX],
+        style_ids: [0xFFFFu32; STYLE_SLOTS],
+        cvt_offsets: [0; STYLE_SLOTS],
+        cvt_horz_width_sizes: [0; STYLE_SLOTS],
+        cvt_vert_width_sizes: [0; STYLE_SLOTS],
+        cvt_blue_zone_sizes: [0; STYLE_SLOTS],
+        cvt_blue_adjustment_offsets: [0xFFFFu32; STYLE_SLOTS],
     };
 
     let mut hwidth_count = 0u32;
@@ -273,16 +268,18 @@ fn build_cvt_blob_rs(
 }
 
 fn build_cvt_table_rs(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
-    let sample_glyphs = font.sfnt.sample_glyphs;
+    // Clone sample_glyphs to release the borrow before mutable access
+    let sample_glyphs = font.sfnt.sample_glyphs.clone();
     let fallback_style = crate::orchestrate::fallback_style_for_script(
         crate::orchestrate::script_to_index(&font.args.fallback_script),
     );
 
-    let mut style_metrics: [TaRsStyleMetrics; TA_STYLE_MAX] =
+    let mut style_metrics: [TaRsStyleMetrics; STYLE_SLOTS] =
         core::array::from_fn(|_| TaRsStyleMetrics::default());
 
-    for style_idx in 0..TA_STYLE_MAX {
-        match compute_style_metrics_rs(font, style_idx, sample_glyphs[style_idx]) {
+    for style_idx in 0..STYLE_SLOTS {
+        let glyph_id = sample_glyphs.get(style_idx).copied().unwrap_or(0);
+        match compute_style_metrics_rs(font, style_idx, glyph_id) {
             Ok(metrics) => {
                 style_metrics[style_idx] = metrics;
             }
@@ -294,7 +291,9 @@ fn build_cvt_table_rs(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
 
         if style_metrics[style_idx].blue_refs.is_empty() {
             let sfnt_mut = &mut font.sfnt;
-            sfnt_mut.sample_glyphs[style_idx] = 0;
+            if style_idx < sfnt_mut.sample_glyphs.len() {
+                sfnt_mut.sample_glyphs[style_idx] = 0;
+            }
             replace_style_with_fallback(sfnt_mut, style_idx, fallback_style as u16);
         }
     }

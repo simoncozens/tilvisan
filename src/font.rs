@@ -10,7 +10,6 @@ use crate::{args::Args, control_index::ControlState, glyf::GlyfData, AutohintErr
 use core::ffi::{c_int, c_long, c_uint};
 use std::collections::BTreeMap;
 
-pub(crate) const TA_STYLE_MAX: usize = 84;
 pub(crate) const TA_PROP_INCREASE_X_HEIGHT_MIN: c_int = 6;
 
 pub(crate) type TaProgressFunc = Option<fn(GlyphId, GlyphId, c_long, usize) -> c_int>;
@@ -42,8 +41,8 @@ impl TableEntry {
 #[derive(Debug)]
 pub(crate) struct Sfnt {
     pub(crate) glyph_count: c_long,
-    pub(crate) glyph_styles: Vec<u16>,
-    pub(crate) sample_glyphs: [c_uint; TA_STYLE_MAX],
+    pub(crate) glyph_styles: Vec<crate::style::GlyphStyle>,
+    pub(crate) sample_glyphs: Vec<u32>,
     pub(crate) increase_x_height: c_uint,
     pub(crate) max_composite_points: u16,
     pub(crate) max_composite_contours: u16,
@@ -59,7 +58,7 @@ impl Default for Sfnt {
         Self {
             glyph_count: 0,
             glyph_styles: Vec::new(),
-            sample_glyphs: [0; TA_STYLE_MAX],
+            sample_glyphs: Vec::new(),
             increase_x_height: 0,
             max_composite_points: 0,
             max_composite_contours: 0,
