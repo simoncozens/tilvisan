@@ -954,7 +954,7 @@ fn hints_recorder_marshal_and_emit_action(
         let count = recorder.replay_edge_segment_index_count(edge_idx);
         if count > 0 {
             if segment_indices1.try_reserve_exact(count).is_err() {
-                return Err(AutohintError::UnportedError(0x50));
+                return Err(AutohintError::OutOfMemory);
             }
             segment_indices1.resize(count, 0);
             if recorder.dump_replay_edge_segment_indices(edge_idx, &mut segment_indices1) != count {
@@ -968,7 +968,7 @@ fn hints_recorder_marshal_and_emit_action(
         let count = recorder.replay_edge_segment_index_count(edge_idx);
         if count > 0 {
             if segment_indices2.try_reserve_exact(count).is_err() {
-                return Err(AutohintError::UnportedError(0x50));
+                return Err(AutohintError::OutOfMemory);
             }
             segment_indices2.resize(count, 0);
             if recorder.dump_replay_edge_segment_indices(edge_idx, &mut segment_indices2) != count {
@@ -1193,7 +1193,7 @@ fn recorder_record_hints_for_ppem(
     )?;
 
     if !recorder_build_replay_axis_from_plan(recorder, &rust_plan) {
-        return Err(AutohintError::UnportedError(0x50));
+        return Err(AutohintError::OutOfMemory);
     }
 
     let Some((cvt_blue_refs_offset, cvt_blue_shoots_offset)) =
@@ -1584,7 +1584,7 @@ pub(crate) fn build_glyph_instructions(
     if is_composite_glyph {
         let subglyph = match build_subglyph_shifter_bytecode(font_ref, idx) {
             Ok(v) => v,
-            Err(status) => return Err(AutohintError::UnportedError(status as i32)),
+            Err(_) => return Err(AutohintError::LoaderInvalidArgument),
         };
         bytecode.extend(subglyph);
         use_gstyle_data = false;
@@ -1706,7 +1706,7 @@ pub(crate) fn build_glyph_instructions(
                         .is_err()
                         || last_indices.try_reserve_exact(num_active_segments).is_err()
                     {
-                        return Err(AutohintError::UnportedError(0x50));
+                        return Err(AutohintError::OutOfMemory);
                     }
                     first_indices.resize(num_active_segments, 0);
                     last_indices.resize(num_active_segments, 0);
@@ -1851,7 +1851,7 @@ pub(crate) fn build_glyph_instructions(
                     .is_err()
                     || last_indices.try_reserve_exact(num_active_segments).is_err()
                 {
-                    return Err(AutohintError::UnportedError(0x50));
+                    return Err(AutohintError::OutOfMemory);
                 }
                 first_indices.resize(num_active_segments, 0);
                 last_indices.resize(num_active_segments, 0);
@@ -1936,9 +1936,7 @@ pub(crate) fn build_glyph_instructions(
         sfnt_mut.max_instructions = sfnt_max_instructions;
     }
 
-    if let Err(err) = glyph_ref.set_instructions(bytecode.as_slice()) {
-        return Err(AutohintError::UnportedError(err));
-    }
+    glyph_ref.set_instructions(bytecode.as_slice());
     // Put the glyph back
     put_glyph(font_ref, sfnt_idx, idx, glyph_ref);
     Ok(())
@@ -1969,7 +1967,7 @@ fn build_glyph_scaler_bytecode(
 
     let mut args = Vec::<u32>::new();
     if args.try_reserve_exact(num_args).is_err() {
-        return Err(AutohintError::UnportedError(0x50));
+        return Err(AutohintError::OutOfMemory);
     }
     args.resize(num_args, 0);
 
@@ -2108,7 +2106,7 @@ fn build_glyph_segments_bytecode(
 
     let mut args = Vec::<u32>::new();
     if args.try_reserve_exact(num_args).is_err() {
-        return Err(AutohintError::UnportedError(0x50));
+        return Err(AutohintError::OutOfMemory);
     }
     args.resize(num_args, 0);
 

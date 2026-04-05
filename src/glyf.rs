@@ -27,8 +27,7 @@ use write_fonts::{
 
 pub const STYLE_SLOTS: usize = STYLE_COUNT;
 
-type BuildGlyphInstructions =
-    Option<fn(&mut Font, usize, GlyphId) -> Result<i32, AutohintError>>;
+type BuildGlyphInstructions = Option<fn(&mut Font, usize, GlyphId) -> Result<i32, AutohintError>>;
 
 fn fallback_style(font: &Font) -> u16 {
     crate::orchestrate::fallback_style_for_script(crate::orchestrate::script_to_index(
@@ -151,11 +150,7 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
 
     let sfnt_max_components = font.sfnt.max_components;
 
-    let build_result =
-        match build_glyphs(font, use_scaler, font.args.composites, sfnt_max_components) {
-            Ok(result) => result,
-            Err(error) => return Err(AutohintError::UnportedError(error as i32)),
-        };
+    let build_result = build_glyphs(font, use_scaler, font.args.composites, sfnt_max_components)?;
 
     data.glyphs = build_result.glyphs;
     data.num_glyphs = build_result.num_glyphs;
@@ -327,10 +322,9 @@ impl ScaledGlyph {
         }
     }
 
-    pub fn set_instructions(&mut self, bytes: &[u8]) -> Result<(), i32> {
+    pub fn set_instructions(&mut self, bytes: &[u8]) {
         self.ins = Bytecode::new();
         self.ins.extend_bytes(bytes);
-        Ok(())
     }
 
     pub fn append_ignore_std_width(&mut self) {
@@ -750,23 +744,17 @@ fn build_glyphs(
     use_scaler: u8,
     hint_composites: bool,
     max_components: u16,
-) -> Result<BuiltGlyphs, u32> {
+) -> Result<BuiltGlyphs, AutohintError> {
     let result = if use_scaler != 0 {
         run_font_through_scaler(font)
     } else {
         split_glyphs(font)
     };
 
-    let mut glyphs = match result {
-        Ok(glyphs) => glyphs,
-        Err(_) => return Err(0x50),
-    };
+    let mut glyphs = result?;
 
     let (max_composite_points, max_composite_contours) =
-        match compute_composite_pointsums(&mut glyphs, hint_composites) {
-            Ok(pair) => pair,
-            Err(_) => return Err(0x23),
-        };
+        compute_composite_pointsums(&mut glyphs, hint_composites)?;
 
     if max_components > 0 && hint_composites {
         add_ttfautohint_glyph(&mut glyphs);
@@ -802,7 +790,7 @@ pub(crate) fn compute_hint_plan(
         is_digit != 0,
         ppem as f32,
     ) else {
-        return Err(AutohintError::UnportedError(0x23));
+        return Err(AutohintError::HintPlanUnavailable);
     };
 
     Ok(plan)

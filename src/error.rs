@@ -17,8 +17,18 @@ pub enum AutohintError {
     MissingTable(Tag),
     #[error("Invalid font: {0}")]
     InvalidFont(&'static str),
-    #[error("Unported error with code: {0}")]
-    UnportedError(i32),
+    #[error("Out of memory while building hinting data")]
+    OutOfMemory,
+    #[error("Numeric overflow while converting style metrics")]
+    NumericOverflow,
+    #[error("No sample glyph available for style metrics")]
+    MissingStyleSampleGlyph,
+    #[error("No usable style metrics found in font")]
+    NoUsableStyleMetrics,
+    #[error("Unable to build hint plan for glyph/style")]
+    HintPlanUnavailable,
+    #[error("Invalid loader input")]
+    LoaderInvalidArgument,
     #[error("Null pointer error")]
     NullPointer,
     #[error("Invalid font table")]

@@ -9,10 +9,6 @@ use skrifa::{
     FontRef, Tag,
 };
 
-const FT_ERR_INVALID_TABLE: u32 = 0x23;
-const TA_ERR_HINTER_OVERFLOW: u32 = 0xF0;
-const TA_ERR_MISSING_GLYPH: u32 = 0xF1;
-
 // From tabytecode.h: CVT runtime section size
 const CVTL_MAX_RUNTIME: u32 = 7;
 const STYLE_SLOTS: usize = STYLE_COUNT;
@@ -42,18 +38,18 @@ fn compute_style_metrics(
     font: &mut Font,
     style_index: usize,
     sample_glyph: u32,
-) -> Result<StyleMetrics, u32> {
+) -> Result<StyleMetrics, AutohintError> {
     if sample_glyph == 0 {
-        return Err(TA_ERR_MISSING_GLYPH);
+        return Err(AutohintError::MissingStyleSampleGlyph);
     }
 
     let ttf_bytes = font.build_ttf();
     let Ok(font) = FontRef::new(&ttf_bytes) else {
-        return Err(FT_ERR_INVALID_TABLE);
+        return Err(AutohintError::InvalidTable);
     };
 
     let Some(style_class) = STYLE_CLASSES.get(style_index) else {
-        return Err(FT_ERR_INVALID_TABLE);
+        return Err(AutohintError::InvalidTable);
     };
 
     let metrics = compute_unscaled_style_metrics_exported(&font, &[], style_class);
@@ -61,7 +57,7 @@ fn compute_style_metrics(
     let mut hwidths = Vec::with_capacity(metrics.horizontal_widths.len());
     for &w in &metrics.horizontal_widths {
         let Ok(w) = checked_i32_to_u16(w) else {
-            return Err(TA_ERR_HINTER_OVERFLOW);
+            return Err(AutohintError::NumericOverflow);
         };
         hwidths.push(w);
     }
@@ -69,7 +65,7 @@ fn compute_style_metrics(
     let mut vwidths = Vec::with_capacity(metrics.vertical_widths.len());
     for &w in &metrics.vertical_widths {
         let Ok(w) = checked_i32_to_u16(w) else {
-            return Err(TA_ERR_HINTER_OVERFLOW);
+            return Err(AutohintError::NumericOverflow);
         };
         vwidths.push(w);
     }
@@ -80,10 +76,10 @@ fn compute_style_metrics(
 
     for blue in &metrics.blues {
         let Ok(reference) = checked_i32_to_u16(blue.reference) else {
-            return Err(TA_ERR_HINTER_OVERFLOW);
+            return Err(AutohintError::NumericOverflow);
         };
         let Ok(shoot) = checked_i32_to_u16(blue.shoot) else {
-            return Err(TA_ERR_HINTER_OVERFLOW);
+            return Err(AutohintError::NumericOverflow);
         };
         blue_refs.push(reference);
         blue_shoots.push(shoot);
@@ -110,11 +106,11 @@ pub struct CvtBlobData {
     pub cvt_blue_adjustment_offsets: [u32; STYLE_SLOTS],
 }
 
-fn checked_i32_to_u16(v: i32) -> Result<u16, u32> {
+fn checked_i32_to_u16(v: i32) -> Result<u16, AutohintError> {
     if v <= 0xFFFF {
         Ok((v as i64 & 0xFFFF) as u16)
     } else {
-        Err(TA_ERR_HINTER_OVERFLOW)
+        Err(AutohintError::NumericOverflow)
     }
 }
 
@@ -134,9 +130,9 @@ fn build_cvt_blob(
     metrics_arr: &[StyleMetrics],
     windows_compatibility: bool,
     units_per_em: u16,
-) -> Result<CvtBlobData, u32> {
+) -> Result<CvtBlobData, AutohintError> {
     if metrics_arr.len() != STYLE_SLOTS {
-        return Err(FT_ERR_INVALID_TABLE);
+        return Err(AutohintError::InvalidTable);
     }
 
     let mut out = CvtBlobData {
@@ -260,7 +256,7 @@ fn build_cvt_blob(
     }
 
     if bytecode.len() as u32 != buf_len_bytes {
-        return Err(FT_ERR_INVALID_TABLE);
+        return Err(AutohintError::InvalidTable);
     }
 
     out.bytecode = bytecode;
@@ -283,10 +279,8 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
             Ok(metrics) => {
                 style_metrics[style_idx] = metrics;
             }
-            Err(TA_ERR_MISSING_GLYPH) => continue,
-            Err(error) => {
-                return Err(AutohintError::UnportedError(error as i32));
-            }
+            Err(AutohintError::MissingStyleSampleGlyph) => continue,
+            Err(error) => return Err(error),
         }
 
         if style_metrics[style_idx].blue_refs.is_empty() {
@@ -306,13 +300,11 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
         units_per_em as u16,
     ) {
         Ok(blob) => blob,
-        Err(error) => {
-            return Err(AutohintError::UnportedError(error as i32));
-        }
+        Err(error) => return Err(error),
     };
 
     if blob_data.num_used_styles == 0 && !font.args.symbol {
-        return Err(AutohintError::UnportedError(TA_ERR_MISSING_GLYPH as i32));
+        return Err(AutohintError::NoUsableStyleMetrics);
     }
     let glyf_data = font
         .glyf_ptr_owned
