@@ -813,6 +813,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "tilvisan"
+version = "0.1.0"
+dependencies = [
+ "cbindgen",
+ "chrono",
+ "clap",
+ "env_logger",
+ "glob",
+ "indexmap",
+ "libc",
+ "libtest-mimic",
+ "log",
+ "logos",
+ "paste",
+ "pkg-config",
+ "similar",
+ "skrifa",
+ "thiserror",
+ "write-fonts",
+]
+
+[[package]]
 name = "toml"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -852,28 +874,6 @@ name = "toml_write"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
-
-[[package]]
-name = "ttfautohint-rs"
-version = "0.1.0"
-dependencies = [
- "cbindgen",
- "chrono",
- "clap",
- "env_logger",
- "glob",
- "indexmap",
- "libc",
- "libtest-mimic",
- "log",
- "logos",
- "paste",
- "pkg-config",
- "similar",
- "skrifa",
- "thiserror",
- "write-fonts",
-]
 
 [[package]]
 name = "unicode-ident"

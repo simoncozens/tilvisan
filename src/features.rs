@@ -1,8 +1,4 @@
-/// OpenType feature tag strings recognized by ttfautohint.
-///
-/// These correspond to the active `COVERAGE` entries in
-/// `ttfautohint-coverages.h`, in the same order as the C `feature_tags[]`
-/// array in `tafeature.c`, followed by the unconditional `dflt` entry.
+/// OpenType feature tag strings recognized by tilvisan.
 pub const FEATURE_TAGS: &[&str] = &[
     "c2cp", // petite capitals from capitals
     "c2sc", // small capitals from capitals

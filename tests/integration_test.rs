@@ -7,7 +7,7 @@ use std::{
 
 use libtest_mimic::{Arguments, Trial};
 use similar::TextDiff;
-use ttfautohint_rs::{ttfautohint, Args, InfoData, ScriptClassIndex, StemWidthModes};
+use tilvisan::{ttfautohint, Args, InfoData, ScriptClassIndex, StemWidthModes};
 
 fn main() {
     let args = Arguments::from_args();

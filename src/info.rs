@@ -39,9 +39,9 @@ pub struct Family {
 }
 
 pub fn build_version_string(idata: &mut InfoData, args: &crate::args::Args) -> i32 {
-    let version = "1.8.4"; // TODO: Get from build system
+    let version = env!("CARGO_PKG_VERSION");
 
-    let mut d = format!("; ttfautohint (v{})", version);
+    let mut d = format!("; tilvisan (v{})", version);
 
     if !args.detailed_info {
         finalize_info_string(idata, d);
@@ -261,15 +261,15 @@ pub fn process_name_post(idata: &mut InfoData, records: &mut [Vec<u8>], family_s
 }
 
 fn info_name_id_5_vec(platform_id: u16, encoding_id: u16, data: &mut Vec<u8>, idata: &InfoData) {
-    let ttfautohint_tag: &[u8] = b"; ttfautohint";
-    let ttfautohint_tag_wide: Vec<u8> = ttfautohint_tag.iter().flat_map(|&b| [0u8, b]).collect();
+    let autohint_tag: &[u8] = b"; tilvisan";
+    let autohint_tag_wide: Vec<u8> = autohint_tag.iter().flat_map(|&b| [0u8, b]).collect();
 
     let is_narrow =
         platform_id == 1 || (platform_id == 3 && !(encoding_id == 1 || encoding_id == 10));
     let (v, s, offset): (&[u8], &[u8], usize) = if is_narrow {
-        (&idata.info_string, ttfautohint_tag, 2)
+        (&idata.info_string, autohint_tag, 2)
     } else {
-        (&idata.info_string_wide, &ttfautohint_tag_wide, 4)
+        (&idata.info_string_wide, &autohint_tag_wide, 4)
     };
 
     fn find_sub(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -279,7 +279,7 @@ fn info_name_id_5_vec(platform_id: u16, encoding_id: u16, data: &mut Vec<u8>, id
         haystack.windows(needle.len()).position(|w| w == needle)
     }
 
-    // Remove any existing ttfautohint marker in the string.
+    // Remove any existing autohint marker in the string.
     if let Some(s_start) = find_sub(data, s) {
         let mut s_end = s_start + offset;
         while s_end < data.len() {

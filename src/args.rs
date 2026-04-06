@@ -5,7 +5,7 @@ use clap::Parser;
 use crate::{scripts::ScriptClassIndex, AutohintError, StemWidthMode, StemWidthModes};
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "ttfautohint", version = "1.8.4", about = "TrueType autohinter", long_about = None)]
+#[command(about = "TrueType autohinter", long_about = None)]
 pub struct Args {
     /// Input font file. Use '-' for stdin.
     #[arg(value_name = "IN-FILE")]
@@ -48,7 +48,7 @@ pub struct Args {
     #[arg(short = 'i', long)]
     pub ignore_restrictions: bool,
 
-    /// Add detailed ttfautohint info to 'name' table.
+    /// Add detailed autohint info to 'name' table.
     #[arg(short = 'I', long)]
     pub detailed_info: bool,
 
@@ -68,7 +68,7 @@ pub struct Args {
     #[arg(short = 'm', long)]
     pub control_file: Option<PathBuf>,
 
-    /// Don't add ttfautohint info to 'name' table.
+    /// Don't add autohinter info to 'name' table.
     #[arg(short = 'n', long)]
     pub no_info: bool,
 

@@ -1,8 +1,8 @@
 use clap::Parser;
 use std::io::{self, Write};
-use ttfautohint_rs::Args;
+use tilvisan::Args;
 
-use ttfautohint_rs::ttfautohint;
+use tilvisan::autohint;
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
@@ -16,7 +16,7 @@ fn main() -> io::Result<()> {
 
     let output = args.output.clone();
 
-    let output_bytes = match ttfautohint(&args) {
+    let output_bytes = match autohint(&args) {
         Ok(bytes) => bytes,
         Err(e) => {
             eprintln!("Error: {}", e);

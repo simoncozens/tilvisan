@@ -22,7 +22,7 @@ pub(crate) type TaProgressFunc = Option<fn(GlyphId, GlyphId, c_long, usize) -> c
 #[derive(Debug)]
 pub struct TableEntry {
     pub data: Vec<u8>,
-    /// True once ttfautohint has processed (and possibly modified) this table.
+    /// True once tilvisan has processed (and possibly modified) this table.
     pub processed: bool,
 }
 
@@ -215,5 +215,16 @@ impl Font {
                 _ => {}
             }
         }
+    }
+
+    pub(crate) fn has_ttfautohint_glyph(&self) -> Result<bool, AutohintError> {
+        let Some(post_table) = self.get_table(Tag::new(b"post")) else {
+            return Ok(false);
+        };
+        const TTFAUTOHINT_GLYPH_NAME: &[u8] = b".ttfautohint";
+
+        Ok(post_table
+            .windows(TTFAUTOHINT_GLYPH_NAME.len())
+            .any(|w| w == TTFAUTOHINT_GLYPH_NAME))
     }
 }

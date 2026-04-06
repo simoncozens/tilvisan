@@ -1,13 +1,10 @@
 [package]
-name = "ttfautohint-rs"
+name = "tilvisan"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["lib", "staticlib"]
-
 [[bin]]
-name = "ttfautohint"
+name = "tilvisan"
 path = "src/main.rs"
 
 [dependencies]

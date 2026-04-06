@@ -78,21 +78,7 @@ pub(crate) fn update_maxp_table_hinted(
 
     Ok(())
 }
-
-const TTFAUTOHINT_GLYPH_NAME: &[u8] = b".ttfautohint";
 const OS2_FSTYPE_OFFSET: usize = 8;
-
-pub(crate) fn sfnt_has_ttfautohint_glyph(font: &Font) -> Result<bool, AutohintError> {
-    // NOTE: font-based implementation. If needed, this can be swapped to
-    // GlyphNames::new(fontref) once a stable FontRef-from-font path is wired here.
-    let Some(post_table) = font.get_table(Tag::new(b"post")) else {
-        return Ok(false);
-    };
-
-    Ok(post_table
-        .windows(TTFAUTOHINT_GLYPH_NAME.len())
-        .any(|w| w == TTFAUTOHINT_GLYPH_NAME))
-}
 
 pub(crate) fn sfnt_has_legal_permission(font: &Font) -> Result<bool, AutohintError> {
     let Some(os2_table) = font.get_table(Tag::new(b"OS/2")) else {

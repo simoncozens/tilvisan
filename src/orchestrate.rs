@@ -6,13 +6,12 @@ use crate::{
     font::Font,
     info::InfoData,
     intset::{IntSet, RangeExpr},
-    maxp::sfnt_has_ttfautohint_glyph,
     prep::build_prep_table,
     Args, AutohintError,
 };
 use std::io::{self, Read};
 
-pub fn ttfautohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
+pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
     let input_file = &args.input;
 
     // Read input file
@@ -83,7 +82,7 @@ pub fn ttfautohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
     let hint_composites = font.args.composites;
     let fallback_style = fallback_style_for_script(font.args.fallback_script);
 
-    if sfnt_has_ttfautohint_glyph(&font)? {
+    if font.has_ttfautohint_glyph()? {
         return Err(AutohintError::FontAlreadyProcessed);
     }
 
