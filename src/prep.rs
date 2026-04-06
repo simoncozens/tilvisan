@@ -1,6 +1,6 @@
 #![allow(non_upper_case_globals)]
 use crate::{
-    bytecode::{high, high_word_i32, low, low_word_i32, Bytecode, CONTROL_DELTA_PPEM_MIN},
+    bytecode::{high, low, Bytecode, CONTROL_DELTA_PPEM_MIN},
     font::{Font, TA_PROP_INCREASE_X_HEIGHT_MIN},
     glyf::GlyfData,
     intset::IntSet,
@@ -126,8 +126,7 @@ pub(crate) fn build_prep_table(
     }
     if font.args.hinting_limit > 0 {
         bytecode.extend(PREP_hinting_limit_a);
-        bytecode.push_u8(high(font.args.hinting_limit));
-        bytecode.push_u8(low(font.args.hinting_limit));
+        bytecode.push_word(font.args.hinting_limit);
         bytecode.extend(PREP_hinting_limit_b);
     }
     bytecode.extend(PREP_store_funits_to_pixels);

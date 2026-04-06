@@ -60,6 +60,10 @@ pub struct Args {
     #[arg(short = 'l', long, default_value_t = 8)]
     pub hinting_range_min: u32,
 
+    /// Set maximum hinting range (PPEM).
+    #[arg(short = 'r', long, default_value_t = 50)]
+    pub hinting_range_max: u32,
+
     /// Control file.
     #[arg(short = 'm', long)]
     pub control_file: Option<PathBuf>,
@@ -75,10 +79,6 @@ pub struct Args {
     /// Alias for adjust-subglyphs.
     #[arg(long)]
     pub adjust_subglyphs: bool,
-
-    /// Set maximum hinting range (PPEM).
-    #[arg(short = 'r', long, default_value_t = 50)]
-    pub hinting_range_max: u32,
 
     /// Reference font file.
     #[arg(short = 'R', long)]
