@@ -151,7 +151,7 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
         style_offsets: IndexMap::new(),
     };
 
-    let sfnt_max_components = font.sfnt.max_components;
+    let sfnt_max_components = font.max_components;
 
     let build_result = build_glyphs(font, use_scaler, font.args.composites, sfnt_max_components)?;
 
@@ -159,10 +159,9 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
     data.num_glyphs = build_result.num_glyphs;
 
     if font.args.composites && sfnt_max_components != 0 {
-        let sfnt_ref = &mut font.sfnt;
-        sfnt_ref.max_components += 1;
-        sfnt_ref.max_composite_points = build_result.max_composite_points;
-        sfnt_ref.max_composite_contours = build_result.max_composite_contours;
+        font.max_components += 1;
+        font.max_composite_points = build_result.max_composite_points;
+        font.max_composite_contours = build_result.max_composite_contours;
     }
 
     if font.glyf_data.is_none() {
@@ -831,7 +830,7 @@ pub(crate) fn create_glyf_data(font: &mut Font) -> Result<(), AutohintError> {
 }
 
 pub(crate) fn handle_coverage(font: &mut Font) -> Result<(), AutohintError> {
-    let glyph_count = font.sfnt.glyph_count;
+    let glyph_count = font.glyph_count;
 
     let (glyph_styles, sample_glyphs_local) = crate::globals::compute_style_coverage(
         font,
@@ -842,15 +841,12 @@ pub(crate) fn handle_coverage(font: &mut Font) -> Result<(), AutohintError> {
         1,
     )?;
 
-    {
-        let sfnt = &mut font.sfnt;
-        sfnt.glyph_styles = glyph_styles;
-        sfnt.sample_glyphs = sample_glyphs_local;
-    }
+    font.glyph_styles = glyph_styles;
+    font.sample_glyphs = sample_glyphs_local;
 
     let data = font.glyf_data.as_mut().ok_or(AutohintError::InvalidTable)?;
 
-    let current_styles = &font.sfnt.glyph_styles;
+    let current_styles = &font.glyph_styles;
 
     if data.master_glyph_styles.is_empty() {
         data.master_glyph_styles = current_styles.clone();
@@ -876,7 +872,7 @@ pub(crate) fn build_glyf_table(font: &mut Font) -> Result<(), AutohintError> {
         .as_ref()
         .map(|d| d.num_glyphs)
         .ok_or(AutohintError::InvalidTable)?;
-    let sfnt_max_components = font.sfnt.max_components;
+    let sfnt_max_components = font.max_components;
 
     if font.get_processed(Tag::new(b"glyf")) {
         return Ok(());
@@ -931,10 +927,7 @@ pub(crate) fn adjust_coverage(font: &mut Font) {
         }
     }
 
-    let sfnt_ref = &mut font.sfnt;
-    sfnt_ref
-        .glyph_styles
-        .clone_from(&data_ref.master_glyph_styles);
+    font.glyph_styles.clone_from(&data_ref.master_glyph_styles);
 
     data_ref.adjusted = 1;
 }

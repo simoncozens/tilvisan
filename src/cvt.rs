@@ -1,6 +1,6 @@
 use crate::{
     bytecode::Bytecode,
-    font::{Font, Sfnt},
+    font::Font,
     glyf::StyleCvtData,
     style::{StyleIndex, STYLE_COUNT},
     AutohintError,
@@ -111,12 +111,12 @@ fn checked_i32_to_u16(v: i32) -> Result<u16, AutohintError> {
     }
 }
 
-fn replace_style_with_fallback(sfnt: &mut Sfnt, style_idx: usize, fallback_style: u16) {
-    if sfnt.glyph_styles.is_empty() || sfnt.glyph_count <= 0 {
+fn replace_style_with_fallback(font: &mut Font, style_idx: usize, fallback_style: u16) {
+    if font.glyph_styles.is_empty() || font.glyph_count <= 0 {
         return;
     }
 
-    for glyph_style in sfnt.glyph_styles.iter_mut() {
+    for glyph_style in font.glyph_styles.iter_mut() {
         if glyph_style.style_index as usize == style_idx {
             glyph_style.style_index = fallback_style;
         }
@@ -258,7 +258,7 @@ fn build_cvt_blob(
 
 fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
     // Clone sample_glyphs to release the borrow before mutable access
-    let sample_glyphs = font.sfnt.sample_glyphs.clone();
+    let sample_glyphs = font.sample_glyphs.clone();
     let fallback_style = crate::orchestrate::fallback_style_for_script(font.args.fallback_script);
 
     let mut style_metrics = vec![];
@@ -272,9 +272,8 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
         match compute_style_metrics(font, style_idx, glyph_id) {
             Ok(metrics) => {
                 if metrics.blue_refs.is_empty() {
-                    let sfnt_mut = &mut font.sfnt;
-                    sfnt_mut.sample_glyphs.shift_remove(&style_key);
-                    replace_style_with_fallback(sfnt_mut, style_idx, fallback_style as u16);
+                    font.sample_glyphs.shift_remove(&style_key);
+                    replace_style_with_fallback(font, style_idx, fallback_style as u16);
                 }
                 style_metrics.push(metrics);
             }
@@ -297,10 +296,7 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
     if blob_data.style_offsets.is_empty() && !font.args.symbol {
         return Err(AutohintError::NoUsableStyleMetrics);
     }
-    let glyf_data = font
-        .glyf_data
-        .as_mut()
-        .ok_or(AutohintError::InvalidTable)?;
+    let glyf_data = font.glyf_data.as_mut().ok_or(AutohintError::InvalidTable)?;
 
     glyf_data.style_offsets = blob_data.style_offsets.clone();
 

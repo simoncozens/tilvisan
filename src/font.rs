@@ -42,8 +42,12 @@ impl TableEntry {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct Sfnt {
+#[derive(Default)]
+pub(crate) struct Font {
+    pub(crate) args: Args,
+    pub(crate) in_buf: Vec<u8>,
+    pub(crate) reference_buf: Option<Vec<u8>>,
+
     pub(crate) glyph_count: c_long,
     pub(crate) glyph_styles: Vec<crate::style::GlyphStyle>,
     pub(crate) sample_glyphs: IndexMap<StyleIndex, GlyphId>,
@@ -55,36 +59,10 @@ pub(crate) struct Sfnt {
     pub(crate) max_twilight_points: u16,
     pub(crate) max_instructions: u16,
     pub(crate) max_components: u16,
-}
 
-impl Default for Sfnt {
-    fn default() -> Self {
-        Self {
-            glyph_count: 0,
-            glyph_styles: Vec::new(),
-            sample_glyphs: IndexMap::new(),
-            increase_x_height: 0,
-            max_composite_points: 0,
-            max_composite_contours: 0,
-            max_storage: 0,
-            max_stack_elements: 0,
-            max_twilight_points: 0,
-            max_instructions: 0,
-            max_components: 0,
-        }
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct Font {
-    pub(crate) args: Args,
-    pub(crate) in_buf: Vec<u8>,
-    pub(crate) reference_buf: Option<Vec<u8>>,
-    pub(crate) sfnt: Sfnt,
     pub(crate) glyf_data: Option<GlyfData>,
     pub(crate) tables: BTreeMap<Tag, TableEntry>, // tag → raw bytes + processing metadata
 
-    // Computed per-SFNT fields (like current SFNT in ta.h):
     pub(crate) have_dsig: bool,
     pub(crate) control: ControlState,
     pub(crate) progress: TaProgressFunc,
@@ -131,7 +109,7 @@ impl Font {
             .ok_or(AutohintError::InvalidFont(
                 "maxp missing max_component_elements",
             ))?;
-        slf.sfnt.max_components = maxp;
+        slf.max_components = maxp;
         Ok(slf)
     }
     pub fn add_table(&mut self, tag: Tag, data: &[u8]) {

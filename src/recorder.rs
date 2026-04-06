@@ -1526,38 +1526,35 @@ fn emit_hints_record_into(out: &mut Bytecode, words_be: &[u8], optimize: bool) -
 }
 
 pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<(), AutohintError> {
-    let font_ref = font;
-
     // Bounds check and get sfnt/GlyfData pointers.
-    if font_ref.glyf_data.is_none() {
+    if font.glyf_data.is_none() {
         return Err(AutohintError::NullPointer);
     }
 
-    let glyf_num_glyphs = font_ref
+    let glyf_num_glyphs = font
         .glyf_data
         .as_ref()
         .map(|g| g.num_glyphs)
         .ok_or(AutohintError::NullPointer)?;
 
-    let mut glyph_ref: ScaledGlyph = get_glyph(font_ref, idx)
+    let mut glyph_ref: ScaledGlyph = get_glyph(font, idx)
         .ok_or(AutohintError::NullPointer)?
         .clone();
 
-    let sfnt_ref = &font_ref.sfnt;
     let idx_usize = idx.to_u32() as usize;
-    if idx_usize >= sfnt_ref.glyph_styles.len() || idx.to_u32() >= glyf_num_glyphs as u32 {
+    if idx_usize >= font.glyph_styles.len() || idx.to_u32() >= glyf_num_glyphs as u32 {
         return Err(AutohintError::NullPointer);
     }
 
-    let gstyle = sfnt_ref.glyph_styles[idx_usize];
+    let gstyle = font.glyph_styles[idx_usize];
     let fallback_style =
-        crate::orchestrate::fallback_style_for_script(font_ref.args.fallback_script) as usize;
-    let mut sfnt_max_storage = sfnt_ref.max_storage;
-    let mut sfnt_max_stack_elements = sfnt_ref.max_stack_elements;
-    let mut sfnt_max_twilight_points = sfnt_ref.max_twilight_points;
-    let mut sfnt_max_instructions = sfnt_ref.max_instructions;
+        crate::orchestrate::fallback_style_for_script(font.args.fallback_script) as usize;
+    let mut sfnt_max_storage = font.max_storage;
+    let mut sfnt_max_stack_elements = font.max_stack_elements;
+    let mut sfnt_max_twilight_points = font.max_twilight_points;
+    let mut sfnt_max_instructions = font.max_instructions;
 
-    if font_ref.args.debug {
+    if font.args.debug {
         log_debug_heading(&format!("glyph {}", idx), '=');
     }
 
@@ -1568,7 +1565,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
     let mut is_empty_glyph = !is_composite_glyph && glyph_ref.num_contours() == 0;
     let mut glyph_num_points = glyph_ref.num_points() as u32;
 
-    if let Ok(info) = crate::loader::load_glyph_info(font_ref, idx) {
+    if let Ok(info) = crate::loader::load_glyph_info(font, idx) {
         is_composite_glyph = info.kind == 2;
         is_empty_glyph = info.kind == 0;
         glyph_num_points = info.num_points as u32;
@@ -1581,17 +1578,17 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
     let mut bytecode = Bytecode::new();
 
     if is_composite_glyph {
-        let subglyph = match build_subglyph_shifter_bytecode(font_ref, idx) {
+        let subglyph = match build_subglyph_shifter_bytecode(font, idx) {
             Ok(v) => v,
             Err(_) => return Err(AutohintError::LoaderInvalidArgument),
         };
         bytecode.extend(subglyph);
         use_gstyle_data = false;
-    } else if font_ref.args.fallback_scaling {
+    } else if font.args.fallback_scaling {
         if ta_style.as_usize() == fallback_style {
             let recorder = RustRecorder::new(&glyph_ref);
             let (emitted, num_args) =
-                build_glyph_scaler_bytecode(&recorder, font_ref, idx, font_ref.args.composites)?;
+                build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
             bytecode.extend(emitted);
 
             let num_storage = StorageAreaLocations::sal_segment_offset as u16;
@@ -1610,16 +1607,16 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
             let mut action_hints_records = HintsRecordArray::new();
             let mut point_hints_records = HintsRecordArray::new();
 
-            for size in font_ref.args.hinting_range_min..=font_ref.args.hinting_range_max {
+            for size in font.args.hinting_range_min..=font.args.hinting_range_max {
                 recorder.clear();
 
-                if font_ref.args.debug {
+                if font.args.debug {
                     log_debug_heading(&format!("size {}", size), '-');
                 }
 
                 recorder_record_hints_for_ppem(
                     &mut recorder,
-                    font_ref,
+                    font,
                     idx,
                     glyph_num_points,
                     size as u16,
@@ -1637,7 +1634,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
                 }
 
                 recorder_reset_hints_record(&mut recorder);
-                recorder_build_point_hints(&mut recorder, font_ref.args.composites)?;
+                recorder_build_point_hints(&mut recorder, font.args.composites)?;
 
                 if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
                     point_hints_records.push(
@@ -1649,12 +1646,8 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
             }
 
             if action_hints_records.is_empty_singleton() {
-                let (emitted, num_args) = build_glyph_scaler_bytecode(
-                    &recorder,
-                    font_ref,
-                    idx,
-                    font_ref.args.composites,
-                )?;
+                let (emitted, num_args) =
+                    build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
                 bytecode.extend(emitted);
 
                 let num_storage = StorageAreaLocations::sal_segment_offset as u16;
@@ -1717,7 +1710,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
                     }
                 }
 
-                let style_id = font_ref
+                let style_id = font
                     .glyf_data
                     .as_ref()
                     .and_then(|g| g.style_offsets.get(&ta_style))
@@ -1726,9 +1719,9 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
                 let pos2 = bytecode.as_slice().len();
                 let segment_result = build_glyph_segments_bytecode(
                     &recorder,
-                    font_ref,
+                    font,
                     idx,
-                    font_ref.args.composites,
+                    font.args.composites,
                     style_id,
                     &first_indices,
                     &last_indices,
@@ -1765,16 +1758,16 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
         let mut action_hints_records = HintsRecordArray::new();
         let mut point_hints_records = HintsRecordArray::new();
 
-        for size in font_ref.args.hinting_range_min..=font_ref.args.hinting_range_max {
+        for size in font.args.hinting_range_min..=font.args.hinting_range_max {
             recorder.clear();
 
-            if font_ref.args.debug {
+            if font.args.debug {
                 log_debug_heading(&format!("size {}", size), '-');
             }
 
             recorder_record_hints_for_ppem(
                 &mut recorder,
-                font_ref,
+                font,
                 idx,
                 glyph_num_points,
                 size as u16,
@@ -1792,7 +1785,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
             }
 
             recorder_reset_hints_record(&mut recorder);
-            recorder_build_point_hints(&mut recorder, font_ref.args.composites)?;
+            recorder_build_point_hints(&mut recorder, font.args.composites)?;
 
             if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
                 point_hints_records.push(
@@ -1805,7 +1798,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
 
         if action_hints_records.is_empty_singleton() {
             let (emitted, num_args) =
-                build_glyph_scaler_bytecode(&recorder, font_ref, idx, font_ref.args.composites)?;
+                build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
             bytecode.extend(emitted);
 
             let num_storage = StorageAreaLocations::sal_segment_offset as u16;
@@ -1867,7 +1860,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
                 }
             }
 
-            let style_id = font_ref
+            let style_id = font
                 .glyf_data
                 .as_ref()
                 .and_then(|g| g.style_offsets.get(&ta_style))
@@ -1876,9 +1869,9 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
             let pos2 = bytecode.as_slice().len();
             let segment_result = build_glyph_segments_bytecode(
                 &recorder,
-                font_ref,
+                font,
                 idx,
-                font_ref.args.composites,
+                font.args.composites,
                 style_id,
                 &first_indices,
                 &last_indices,
@@ -1911,9 +1904,9 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
         }
     }
 
-    if font_ref.control.has_index() {
+    if font.control.has_index() {
         let (emitted, max_stack) =
-            crate::c_api::build_delta_exceptions(font_ref.control.index(), idx, &mut glyph_ref);
+            crate::c_api::build_delta_exceptions(font.control.index(), idx, &mut glyph_ref);
         if max_stack > sfnt_max_stack_elements.into() {
             sfnt_max_stack_elements = max_stack as u16;
         }
@@ -1933,17 +1926,14 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
         sfnt_max_instructions = ins_len;
     }
 
-    {
-        let sfnt_mut = &mut font_ref.sfnt;
-        sfnt_mut.max_storage = sfnt_max_storage;
-        sfnt_mut.max_stack_elements = sfnt_max_stack_elements;
-        sfnt_mut.max_twilight_points = sfnt_max_twilight_points;
-        sfnt_mut.max_instructions = sfnt_max_instructions;
-    }
+    font.max_storage = sfnt_max_storage;
+    font.max_stack_elements = sfnt_max_stack_elements;
+    font.max_twilight_points = sfnt_max_twilight_points;
+    font.max_instructions = sfnt_max_instructions;
 
     glyph_ref.set_instructions(bytecode.as_slice());
     // Put the glyph back
-    put_glyph(font_ref, idx, glyph_ref);
+    put_glyph(font, idx, glyph_ref);
     Ok(())
 }
 

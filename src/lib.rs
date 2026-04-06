@@ -22,7 +22,6 @@ mod opcodes;
 mod orchestrate;
 mod prep;
 mod recorder;
-mod scripts;
 mod style;
 mod style_metadata;
 

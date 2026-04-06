@@ -89,8 +89,8 @@ pub fn ttfautohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
 
     let glyph_count = crate::maxp::num_glyphs_in_font_binary(&font.in_buf)?;
 
-    font.sfnt.glyph_count = glyph_count as i64;
-    font.sfnt.glyph_styles = vec![crate::style::GlyphStyle::unassigned(); glyph_count as usize];
+    font.glyph_count = glyph_count as i64;
+    font.glyph_styles = vec![crate::style::GlyphStyle::unassigned(); glyph_count as usize];
 
     crate::control_index::control_build_tree(&mut font)?;
 
@@ -110,7 +110,7 @@ pub fn ttfautohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
 
         crate::glyf::handle_coverage(&mut font)?;
 
-        font.sfnt.increase_x_height = font.args.increase_x_height;
+        font.increase_x_height = font.args.increase_x_height;
     }
 
     if !dehint {
@@ -136,13 +136,13 @@ pub fn ttfautohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
             has_index,
             fallback_style as usize,
         )?;
-        let sfnt_ref = &mut font.sfnt;
+        let sfnt_ref = &mut font;
         if fpgm_len > sfnt_ref.max_instructions as usize {
             sfnt_ref.max_instructions = fpgm_len as u16;
         }
 
         let prep_stack = build_prep_table(&mut font, &glyf_data)? as u16;
-        let sfnt_ref = &mut font.sfnt;
+        let sfnt_ref = &mut font;
         if prep_stack > sfnt_ref.max_stack_elements {
             sfnt_ref.max_stack_elements = prep_stack;
         }
@@ -160,11 +160,11 @@ pub fn ttfautohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
             .as_ref()
             .ok_or(AutohintError::NullPointer)?
             .num_glyphs;
-        let adjust_composites = font.sfnt.max_components != 0 && hint_composites;
+        let adjust_composites = font.max_components != 0 && hint_composites;
         crate::maxp::update_maxp_table_hinted(&mut font, adjust_composites, num_glyphs)?;
     }
 
-    if !dehint && font.sfnt.max_components != 0 && !adjust_subglyphs && hint_composites {
+    if !dehint && font.max_components != 0 && !adjust_subglyphs && hint_composites {
         font.update_hmtx();
         font.update_post();
 

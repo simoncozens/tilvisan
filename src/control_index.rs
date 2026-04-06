@@ -164,8 +164,7 @@ pub(crate) fn control_apply_coverage(font: &mut Font) {
 
     let rules_copy = rules.clone();
 
-    let sfnt = &mut font.sfnt;
-    let glyph_styles = &mut sfnt.glyph_styles;
+    let glyph_styles = &mut font.glyph_styles;
     for &(glyph_idx, style) in &rules_copy {
         let glyph_idx = glyph_idx.to_u32() as usize;
         if glyph_idx >= glyph_styles.len() {
