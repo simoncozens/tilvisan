@@ -1,6 +1,5 @@
 mod args;
 mod bytecode;
-mod c_api;
 mod control;
 mod control_index;
 mod cvt;
