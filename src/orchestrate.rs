@@ -1,7 +1,6 @@
 use skrifa::{GlyphId, Tag};
 
 use crate::{
-    args::parse_stem_width_mode_values,
     control::{
         ControlEntryAst, GlyphRef, GlyphSetElem, NumberSetAst, NumberSetElem, PointMode,
         SegmentDirection,
@@ -13,6 +12,7 @@ use crate::{
     maxp::sfnt_has_ttfautohint_glyph,
     prep::build_prep_table,
     recorder::build_glyph_instructions,
+    style::StyleIndex,
     Args, AutohintError,
 };
 use std::{
@@ -20,8 +20,6 @@ use std::{
     io::{self, Read},
 };
 
-const STEM_MODE_MIN: i32 = -1;
-const STEM_MODE_MAX: i32 = 1;
 const HINTING_RANGE_MIN_MIN: u32 = 2;
 const INCREASE_X_HEIGHT_MIN: u32 = 6;
 
@@ -259,22 +257,6 @@ pub fn ttfautohint(
 }
 
 fn validate_options(args: &Args) -> io::Result<()> {
-    let stem_modes = parse_stem_width_mode_values(&args.stem_width_mode).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("invalid stem-width mode: {e}"),
-        )
-    })?;
-    if !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&stem_modes.0)
-        || !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&stem_modes.1)
-        || !(STEM_MODE_MIN..=STEM_MODE_MAX).contains(&stem_modes.2)
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "stem-width mode values must be in -1..=1",
-        ));
-    }
-
     if args.hinting_range_min < HINTING_RANGE_MIN_MIN {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

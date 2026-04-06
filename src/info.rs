@@ -1,4 +1,4 @@
-use crate::{args::parse_stem_width_mode_values, control::NumberSetAst, AutohintError};
+use crate::{control::NumberSetAst, AutohintError};
 use std::collections::BTreeMap;
 
 #[derive(Default, Debug, Clone)]
@@ -15,8 +15,6 @@ impl InfoData {
             info_string_wide: Vec::new(),
             family_data: std::collections::BTreeMap::new(),
         };
-
-        parse_stem_width_mode_values(&args.stem_width_mode)?;
 
         if !args.no_info {
             let ret = build_version_string(&mut idata, args);
@@ -84,19 +82,7 @@ pub fn build_version_string(idata: &mut InfoData, args: &crate::args::Args) -> i
         d.push_str(&format!(" -Z {}", args.reference_index));
     }
 
-    let Ok((gray_stem_width_mode, gdi_cleartype_stem_width_mode, dw_cleartype_stem_width_mode)) =
-        parse_stem_width_mode_values(&args.stem_width_mode)
-    else {
-        return 1;
-    };
-    let mode_letters = ['n', 'q', 's'];
-    let mode = format!(
-        "{}{}{}",
-        mode_letters[(gray_stem_width_mode + 1) as usize],
-        mode_letters[(gdi_cleartype_stem_width_mode + 1) as usize],
-        mode_letters[(dw_cleartype_stem_width_mode + 1) as usize]
-    );
-    d.push_str(&format!(" -a {}", mode));
+    d.push_str(&format!(" -a {}", args.stem_width_mode));
 
     if args.windows_compatibility {
         d.push_str(" -W");

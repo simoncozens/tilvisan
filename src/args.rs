@@ -1,8 +1,11 @@
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 
 use clap::Parser;
 
-use crate::AutohintError;
+use crate::{StemWidthMode, StemWidthModes};
+
+const HINTING_RANGE_MIN_MIN: u32 = 2;
+const INCREASE_X_HEIGHT_MIN: u32 = 6;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "ttfautohint", version = "1.8.4", about = "TrueType autohinter", long_about = None)]
@@ -17,8 +20,8 @@ pub struct Args {
 
     /// Set stem width mode for grayscale, GDI ClearType, and DW ClearType.
     /// Format: three letters 'n', 'q', or 's' (natural, quantized, strong).
-    #[arg(short = 'a', long, default_value = "qsq")]
-    pub stem_width_mode: String,
+    #[arg(short = 'a', long, value_parser=parse_stem_width_mode_values, default_value = "qsq")]
+    pub stem_width_mode: StemWidthModes,
 
     /// Hint composite glyphs separately.
     #[arg(short = 'c', long)]
@@ -130,7 +133,7 @@ impl Default for Args {
         Self {
             input: String::new(),
             output: String::new(),
-            stem_width_mode: "qsq".to_string(),
+            stem_width_mode: StemWidthModes::default(),
             composites: false,
             dehint: false,
             default_script: "latn".to_string(),
@@ -161,24 +164,20 @@ impl Default for Args {
     }
 }
 
-pub(crate) fn parse_stem_width_mode_values(mode: &str) -> Result<(i32, i32, i32), AutohintError> {
+pub(crate) fn parse_stem_width_mode_values(mode: &str) -> Result<StemWidthModes, String> {
     if mode.len() != 3 {
-        return Err(AutohintError::InvalidArgument(
-            "Stem width mode string must consist of exactly three letters".to_string(),
-        ));
+        return Err("Stem width mode string must consist of exactly three letters".to_string());
     }
     let parse_mode = |c| match c {
-        'n' => Ok(-1),
-        'q' => Ok(0),
-        's' => Ok(1),
-        _ => Err(AutohintError::InvalidArgument(
-            "Stem width mode letter must be 'n', 'q', or 's'".to_string(),
-        )),
+        'n' => Ok(StemWidthMode::Natural),
+        'q' => Ok(StemWidthMode::Quantized),
+        's' => Ok(StemWidthMode::Strong),
+        _ => Err("Stem width mode letter must be 'n', 'q', or 's'".to_string()),
     };
     let chars: Vec<char> = mode.chars().collect();
-    Ok((
-        parse_mode(chars[0])?,
-        parse_mode(chars[1])?,
-        parse_mode(chars[2])?,
-    ))
+    Ok(StemWidthModes {
+        gray: parse_mode(chars[0])?,
+        gdi_cleartype: parse_mode(chars[1])?,
+        dw_cleartype: parse_mode(chars[2])?,
+    })
 }

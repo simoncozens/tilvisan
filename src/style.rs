@@ -1,5 +1,7 @@
 use skrifa::outline::STYLE_CLASSES;
 
+use crate::AutohintError;
+
 pub(crate) const STYLE_COUNT: usize = STYLE_CLASSES.len();
 pub(crate) const STYLE_INDEX_UNASSIGNED: u16 = u16::MAX;
 
@@ -9,11 +11,32 @@ pub(crate) const STYLE_INDEX_UNASSIGNED: u16 = u16::MAX;
 /// a *slot index* (the compact running number 0..num_used_styles assigned to
 /// styles that have usable CVT metrics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct StyleIndex(pub usize);
+pub struct StyleIndex(usize);
 
 impl StyleIndex {
+    pub fn new(index: usize) -> Result<Self, AutohintError> {
+        if index < STYLE_COUNT {
+            Ok(StyleIndex(index))
+        } else {
+            Err(AutohintError::InvalidArgument(format!(
+                "style index {index} is out of bounds (max {})",
+                STYLE_COUNT - 1
+            )))
+        }
+    }
+
     pub const fn as_usize(self) -> usize {
         self.0
+    }
+
+    /// Check if a script is oriented top-to-bottom (e.g., Mongolian, Gothic).
+    /// Returns false for out-of-bounds style indices.
+    pub(crate) fn script_hints_top_to_bottom(self) -> bool {
+        if let Some(style) = STYLE_CLASSES.get(self.0) {
+            style.script.hint_top_to_bottom
+        } else {
+            false
+        }
     }
 }
 

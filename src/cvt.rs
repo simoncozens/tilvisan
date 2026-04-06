@@ -234,7 +234,7 @@ fn build_cvt_blob(
         }
 
         style_offsets.insert(
-            StyleIndex(i),
+            StyleIndex::new(i)?,
             StyleCvtData {
                 slot,
                 cvt_offset,
@@ -266,7 +266,7 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
     let mut style_metrics = vec![];
 
     for style_idx in 0..STYLE_SLOTS {
-        let style_key = StyleIndex(style_idx);
+        let style_key = StyleIndex::new(style_idx)?;
         let glyph_id = sample_glyphs
             .get(&style_key)
             .copied()

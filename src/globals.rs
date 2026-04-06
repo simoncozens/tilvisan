@@ -185,7 +185,7 @@ pub(crate) fn compute_style_coverage(
         if let Some(skrifa_style) = styles.style_index(gid as u32) {
             style_index = skrifa_style as u16;
             sample_glyphs_map
-                .entry(StyleIndex(skrifa_style))
+                .entry(StyleIndex::new(skrifa_style)?)
                 .or_insert(GlyphId::new(gid as u32));
         }
 

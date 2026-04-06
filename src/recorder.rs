@@ -42,8 +42,7 @@ fn compute_cvt_blue_offsets(font: &Font, ta_style: StyleIndex) -> Option<(u16, u
         .checked_add(1)?
         .checked_add(data.vert_width_size)?;
 
-    let cvt_blue_shoots_offset_u32 =
-        cvt_blue_refs_offset_u32.checked_add(data.blue_zone_size)?;
+    let cvt_blue_shoots_offset_u32 = cvt_blue_refs_offset_u32.checked_add(data.blue_zone_size)?;
 
     let cvt_blue_refs_offset = u16::try_from(cvt_blue_refs_offset_u32).ok()?;
     let cvt_blue_shoots_offset = u16::try_from(cvt_blue_shoots_offset_u32).ok()?;
@@ -1206,7 +1205,8 @@ fn recorder_record_hints_for_ppem(
         return Err(AutohintError::NullPointer);
     };
 
-    let top_to_bottom_hinting = crate::style_metadata::script_hints_top_to_bottom(ta_style.as_usize());
+    let top_to_bottom_hinting =
+        crate::style_metadata::script_hints_top_to_bottom(ta_style.as_usize());
 
     for rec in &rust_plan.records {
         let result = recorder_replay_process_hint_record(
@@ -1566,7 +1566,7 @@ pub(crate) fn build_glyph_instructions(
         log_debug_heading(&format!("glyph {}", idx), '=');
     }
 
-    let ta_style = StyleIndex(gstyle.style_index as usize);
+    let ta_style = StyleIndex::new(gstyle.style_index as usize)?;
     let mut use_gstyle_data = true;
 
     let mut is_composite_glyph = glyph_ref.num_components() != 0;

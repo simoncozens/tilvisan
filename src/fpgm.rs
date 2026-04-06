@@ -5743,10 +5743,10 @@ fn build_fpgm(
     increase_x_height: u32,
     has_control_data: bool,
     font_fallback_style: usize,
-) -> Bytecode {
+) -> Result<Bytecode, AutohintError> {
     let fallback_slot = glyphdata
         .style_offsets
-        .get(&StyleIndex(font_fallback_style))
+        .get(&StyleIndex::new(font_fallback_style)?)
         .map(|d| d.slot)
         .unwrap_or(0xFFFF);
     let fallback_style: u32 = CVT_SCALING_VALUE_OFFSET(0) as u32 + fallback_slot;
@@ -5948,7 +5948,7 @@ fn build_fpgm(
     bytecode.extend_bytes(FPGM_bci_action_serif_link2_down_upper_lower_bound);
 
     bytecode.extend_bytes(FPGM_bci_hint_glyph);
-    bytecode
+    Ok(bytecode)
 }
 
 pub(crate) fn build_fpgm_table(
@@ -5967,7 +5967,7 @@ pub(crate) fn build_fpgm_table(
         increase_x_height,
         has_control_data,
         font_fallback_style,
-    );
+    )?;
     let out: Vec<u8> = bytecode.as_slice().to_vec();
     let fpgm_len = out.len();
     font.update_table(Tag::new(b"fpgm"), &out);

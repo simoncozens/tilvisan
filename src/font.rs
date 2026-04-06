@@ -7,7 +7,10 @@ use write_fonts::{
     dump_table, from_obj::ToOwnedTable as _, tables::post::Post, types::Version16Dot16,
 };
 
-use crate::{args::Args, control_index::ControlState, glyf::GlyfData, AutohintError, InfoData};
+use crate::{
+    args::Args, control_index::ControlState, glyf::GlyfData, style::StyleIndex, AutohintError,
+    InfoData,
+};
 use core::ffi::{c_int, c_long, c_uint};
 use std::collections::BTreeMap;
 
@@ -43,7 +46,7 @@ impl TableEntry {
 pub(crate) struct Sfnt {
     pub(crate) glyph_count: c_long,
     pub(crate) glyph_styles: Vec<crate::style::GlyphStyle>,
-    pub(crate) sample_glyphs: IndexMap<crate::style::StyleIndex, GlyphId>,
+    pub(crate) sample_glyphs: IndexMap<StyleIndex, GlyphId>,
     pub(crate) increase_x_height: c_uint,
     pub(crate) max_composite_points: u16,
     pub(crate) max_composite_contours: u16,

@@ -12,6 +12,14 @@ pub(crate) fn low(x: u32) -> u8 {
     (x & 0xFF) as u8
 }
 
+pub(crate) fn high_word_i32(x: i32) -> u8 {
+    (((x as i16 as u16) & 0xFF00) >> 8) as u8
+}
+
+pub(crate) fn low_word_i32(x: i32) -> u8 {
+    ((x as i16 as u16) & 0x00FF) as u8
+}
+
 impl IntoIterator for Bytecode {
     type Item = u8;
     type IntoIter = std::vec::IntoIter<u8>;
@@ -95,6 +103,10 @@ impl Bytecode {
     pub fn push_word(&mut self, word: u32) {
         self.push_u8(high(word));
         self.push_u8(low(word));
+    }
+    pub fn push_word_i32(&mut self, word: i32) {
+        self.push_u8(high_word_i32(word));
+        self.push_u8(low_word_i32(word));
     }
 
     pub fn extend_bytes(&mut self, bytes: &[u8]) {

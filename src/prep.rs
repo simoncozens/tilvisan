@@ -1,6 +1,6 @@
 #![allow(non_upper_case_globals)]
 use crate::{
-    bytecode::{high, low, Bytecode, CONTROL_DELTA_PPEM_MIN},
+    bytecode::{high, high_word_i32, low, low_word_i32, Bytecode, CONTROL_DELTA_PPEM_MIN},
     font::{Font, TA_PROP_INCREASE_X_HEIGHT_MIN},
     glyf::GlyfData,
     intset::IntSet,
@@ -118,8 +118,6 @@ pub(crate) fn build_prep_table(
             0x7FFF,
         )
     };
-    let (gray_stem_width_mode, gdi_cleartype_stem_width_mode, dw_cleartype_stem_width_mode) =
-        crate::args::parse_stem_width_mode_values(&font.args.stem_width_mode)?;
     let mut bytecode = Bytecode::new();
     if let Some(x_height_snapping_exceptions) = x_height_snapping_exceptions.as_ref() {
         let (bc, nse) = build_number_set(x_height_snapping_exceptions);
@@ -184,7 +182,12 @@ pub(crate) fn build_prep_table(
         bytecode.push_u8(blue_shoots_offset as u8);
         let blues_size = glyf_data.cvt_blues_size(style_idx);
         let num_blues = if blues_size > 1 {
-            blues_size - if font.args.windows_compatibility { 2 } else { 0 }
+            blues_size
+                - if font.args.windows_compatibility {
+                    2
+                } else {
+                    0
+                }
         } else {
             0
         };
@@ -231,22 +234,18 @@ pub(crate) fn build_prep_table(
     bytecode.push_u8(low(num_used_styles.into()));
     bytecode.extend(PREP_store_vwidth_data_e);
 
-    let gray_mode_word = gray_stem_width_mode.wrapping_mul(100) as u16;
-    let gdi_mode_word = gdi_cleartype_stem_width_mode.wrapping_mul(100) as u16;
-    let dw_mode_word = dw_cleartype_stem_width_mode.wrapping_mul(100) as u16;
+    let gray_mode_word = font.args.stem_width_mode.gray.to_word();
+    let gdi_mode_word = font.args.stem_width_mode.gdi_cleartype.to_word();
+    let dw_mode_word = font.args.stem_width_mode.dw_cleartype.to_word();
 
     bytecode.extend(PREP_set_stem_width_mode_a);
-    bytecode.push_u8(high(gray_mode_word as u32));
-    bytecode.push_u8(low(gray_mode_word as u32));
+    bytecode.push_word_i32(gray_mode_word);
     bytecode.extend(PREP_set_stem_width_mode_b);
-    bytecode.push_u8(high(gdi_mode_word as u32));
-    bytecode.push_u8(low(gdi_mode_word as u32));
+    bytecode.push_word_i32(gdi_mode_word);
     bytecode.extend(PREP_set_stem_width_mode_c);
-    bytecode.push_u8(high(dw_mode_word as u32));
-    bytecode.push_u8(low(dw_mode_word as u32));
+    bytecode.push_word_i32(dw_mode_word);
     bytecode.extend(PREP_set_stem_width_mode_d);
-    bytecode.push_u8(high(dw_mode_word as u32));
-    bytecode.push_u8(low(dw_mode_word as u32));
+    bytecode.push_word_i32(dw_mode_word);
     bytecode.extend(PREP_set_stem_width_mode_e);
 
     if num_used_styles > 3 {

@@ -7,7 +7,7 @@ use std::{
 
 use libtest_mimic::{Arguments, Trial};
 use similar::TextDiff;
-use ttfautohint_rs::{ttfautohint, Args, InfoData, TtfautohintCall};
+use ttfautohint_rs::{ttfautohint, Args, InfoData, StemWidthModes, TtfautohintCall};
 
 fn main() {
     let args = Arguments::from_args();
@@ -124,7 +124,7 @@ fn run_ttfautohint(input_file: &Path, output_file: &Path) {
     let args = Args {
         input: input_file.to_string_lossy().into_owned(),
         output: output_file.to_string_lossy().into_owned(),
-        stem_width_mode: "qsq".to_string(),
+        stem_width_mode: StemWidthModes::default(),
         composites: true,
         dehint: false,
         default_script: "latn".to_string(),
