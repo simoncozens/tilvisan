@@ -1,11 +1,13 @@
 use skrifa::GlyphId;
 
-use crate::bytecode::{high, low, Bytecode};
-use crate::control::CONTROL_DELTA_PPEM_MIN;
-use crate::control_index::ControlIndex;
-use crate::glyf::ScaledGlyph;
-use crate::opcodes::{
-    IUP_y, SVTCA_x, SVTCA_y, DELTAP1, DELTAP2, DELTAP3, LOOPCALL, PUSHB_1, PUSHW_1, WCVTP,
+use crate::{
+    bytecode::{high, low, Bytecode},
+    control::CONTROL_DELTA_PPEM_MIN,
+    control_index::ControlIndex,
+    glyf::ScaledGlyph,
+    opcodes::{
+        IUP_y, SVTCA_x, SVTCA_y, DELTAP1, DELTAP2, DELTAP3, LOOPCALL, PUSHB_1, PUSHW_1, WCVTP,
+    },
 };
 
 // ============================================================================
@@ -57,12 +59,11 @@ fn build_delta_exception_into(
 
 pub(crate) fn build_delta_exceptions(
     index: Option<&ControlIndex>,
-    font_idx: usize,
     glyph_idx: GlyphId,
     glyph: &mut ScaledGlyph,
 ) -> (Bytecode, usize) {
     let rules = index
-        .map(|idx| crate::control_index::delta_rules_for_glyph(idx, font_idx as i32, glyph_idx))
+        .map(|idx| crate::control_index::delta_rules_for_glyph(idx, glyph_idx))
         .unwrap_or_default();
     if rules.is_empty() {
         return (Bytecode::new(), 0);

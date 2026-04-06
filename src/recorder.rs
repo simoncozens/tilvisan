@@ -26,7 +26,7 @@ fn compute_cvt_blue_offsets(font: &Font, ta_style: StyleIndex) -> Option<(u16, u
     }
 
     // Bounds check and get GlyfData pointer.
-    let glyf_data = font.glyf_ptr_owned.as_ref()?;
+    let glyf_data = font.glyf_data.as_ref()?;
     let data = glyf_data
         .style_offsets
         .get(&ta_style)
@@ -50,18 +50,18 @@ fn compute_cvt_blue_offsets(font: &Font, ta_style: StyleIndex) -> Option<(u16, u
     Some((cvt_blue_refs_offset, cvt_blue_shoots_offset))
 }
 
-fn get_glyph(font: &Font, _sfnt_idx: usize, glyph_idx: GlyphId) -> Option<&ScaledGlyph> {
+fn get_glyph(font: &Font, glyph_idx: GlyphId) -> Option<&ScaledGlyph> {
     // Bounds check and get GlyfData pointer.
-    font.glyf_ptr_owned.as_ref()?;
+    font.glyf_data.as_ref()?;
 
-    let glyf_data = font.glyf_ptr_owned.as_ref()?;
+    let glyf_data = font.glyf_data.as_ref()?;
     glyf_data.glyphs.get(glyph_idx.to_u32() as usize)
 }
 
-fn put_glyph(font: &mut Font, _sfnt_idx: usize, glyph_idx: GlyphId, glyph: ScaledGlyph) {
+fn put_glyph(font: &mut Font, glyph_idx: GlyphId, glyph: ScaledGlyph) {
     // Bounds check and get GlyfData pointer.
 
-    let Some(glyf_data) = font.glyf_ptr_owned.as_mut() else {
+    let Some(glyf_data) = font.glyf_data.as_mut() else {
         return;
     };
     if let Some(slot) = glyf_data.glyphs.get_mut(glyph_idx.to_u32() as usize) {
@@ -1525,25 +1525,21 @@ fn emit_hints_record_into(out: &mut Bytecode, words_be: &[u8], optimize: bool) -
     Ok(u16::try_from(num_arguments).unwrap_or(u16::MAX))
 }
 
-pub(crate) fn build_glyph_instructions(
-    font: &mut Font,
-    sfnt_idx: usize,
-    idx: GlyphId,
-) -> Result<(), AutohintError> {
+pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<(), AutohintError> {
     let font_ref = font;
 
     // Bounds check and get sfnt/GlyfData pointers.
-    if font_ref.glyf_ptr_owned.is_none() {
+    if font_ref.glyf_data.is_none() {
         return Err(AutohintError::NullPointer);
     }
 
     let glyf_num_glyphs = font_ref
-        .glyf_ptr_owned
+        .glyf_data
         .as_ref()
         .map(|g| g.num_glyphs)
         .ok_or(AutohintError::NullPointer)?;
 
-    let mut glyph_ref: ScaledGlyph = get_glyph(font_ref, sfnt_idx, idx)
+    let mut glyph_ref: ScaledGlyph = get_glyph(font_ref, idx)
         .ok_or(AutohintError::NullPointer)?
         .clone();
 
@@ -1722,7 +1718,7 @@ pub(crate) fn build_glyph_instructions(
                 }
 
                 let style_id = font_ref
-                    .glyf_ptr_owned
+                    .glyf_data
                     .as_ref()
                     .and_then(|g| g.style_offsets.get(&ta_style))
                     .map(|d| d.slot)
@@ -1872,7 +1868,7 @@ pub(crate) fn build_glyph_instructions(
             }
 
             let style_id = font_ref
-                .glyf_ptr_owned
+                .glyf_data
                 .as_ref()
                 .and_then(|g| g.style_offsets.get(&ta_style))
                 .map(|d| d.slot)
@@ -1916,12 +1912,8 @@ pub(crate) fn build_glyph_instructions(
     }
 
     if font_ref.control.has_index() {
-        let (emitted, max_stack) = crate::c_api::build_delta_exceptions(
-            font_ref.control.index(),
-            sfnt_idx,
-            idx,
-            &mut glyph_ref,
-        );
+        let (emitted, max_stack) =
+            crate::c_api::build_delta_exceptions(font_ref.control.index(), idx, &mut glyph_ref);
         if max_stack > sfnt_max_stack_elements.into() {
             sfnt_max_stack_elements = max_stack as u16;
         }
@@ -1951,7 +1943,7 @@ pub(crate) fn build_glyph_instructions(
 
     glyph_ref.set_instructions(bytecode.as_slice());
     // Put the glyph back
-    put_glyph(font_ref, sfnt_idx, idx, glyph_ref);
+    put_glyph(font_ref, idx, glyph_ref);
     Ok(())
 }
 

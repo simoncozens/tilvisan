@@ -147,11 +147,7 @@ impl ControlIndex {
     }
 }
 
-pub(crate) fn delta_rules_for_glyph(
-    index: &ControlIndex,
-    _font_idx: i32,
-    glyph_idx: GlyphId,
-) -> Vec<DeltaRule> {
+pub(crate) fn delta_rules_for_glyph(index: &ControlIndex, glyph_idx: GlyphId) -> Vec<DeltaRule> {
     index
         .delta_rules
         .get(&(glyph_idx))

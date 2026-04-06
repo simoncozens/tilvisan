@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::{self, Write};
 use ttfautohint_rs::Args;
 
-use ttfautohint_rs::{ttfautohint, InfoData, TtfautohintCall};
+use ttfautohint_rs::ttfautohint;
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
@@ -15,16 +15,8 @@ fn main() -> io::Result<()> {
     }
 
     let output = args.output.clone();
-    let call = TtfautohintCall::from_args(&args).unwrap_or_else(|e| {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
-    });
-    let mut idata = InfoData::from_args(&args).unwrap_or_else(|e| {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
-    });
 
-    let output_bytes = match ttfautohint(&call, &args, &mut idata) {
+    let output_bytes = match ttfautohint(&args) {
         Ok(bytes) => bytes,
         Err(e) => {
             eprintln!("Error: {}", e);

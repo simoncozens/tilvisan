@@ -54,7 +54,7 @@ pub(crate) fn update_gpos(font: &mut Font) -> Result<(), AutohintError> {
     };
 
     let data = font
-        .glyf_ptr_owned
+        .glyf_data
         .as_ref()
         .ok_or(AutohintError::NullPointer)?;
     let glyphs = &data.glyphs;

@@ -29,7 +29,7 @@ mod style_metadata;
 pub use args::Args;
 pub use error::AutohintError;
 pub use info::{build_version_string, InfoData};
-pub use orchestrate::{ttfautohint, TtfautohintCall};
+pub use orchestrate::ttfautohint;
 pub use scripts::ScriptClassIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

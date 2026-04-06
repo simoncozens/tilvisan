@@ -7,9 +7,7 @@ use std::{
 
 use libtest_mimic::{Arguments, Trial};
 use similar::TextDiff;
-use ttfautohint_rs::{
-    ttfautohint, Args, InfoData, ScriptClassIndex, StemWidthModes, TtfautohintCall,
-};
+use ttfautohint_rs::{ttfautohint, Args, InfoData, ScriptClassIndex, StemWidthModes};
 
 fn main() {
     let args = Arguments::from_args();
@@ -155,12 +153,7 @@ fn run_ttfautohint(input_file: &Path, output_file: &Path) {
         epoch: None,
     };
 
-    let call = TtfautohintCall::from_args(&args)
-        .unwrap_or_else(|e| panic!("Failed to construct call for {input_file:?}: {e}"));
-    let mut info_data = InfoData::from_args(&args)
-        .unwrap_or_else(|e| panic!("Failed to construct info data for {input_file:?}: {e}"));
-
-    let output_bytes = ttfautohint(&call, &args, &mut info_data)
+    let output_bytes = ttfautohint(&args)
         .unwrap_or_else(|e| panic!("ttfautohint failed on file {input_file:?}: {e}"));
 
     fs::write(output_file, output_bytes)

@@ -8,6 +8,7 @@ use crate::{
     error::AutohintError,
     font::Font,
     opcodes::{CvtLocations, ADD, PUSHB_2, PUSHB_3, RCVT, WCVTP},
+    recorder::build_glyph_instructions,
     style::{GlyphStyle, StyleIndex, STYLE_INDEX_UNASSIGNED},
 };
 use indexmap::IndexMap;
@@ -164,8 +165,8 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
         sfnt_ref.max_composite_contours = build_result.max_composite_contours;
     }
 
-    if font.glyf_ptr_owned.is_none() {
-        font.glyf_ptr_owned = Some(data);
+    if font.glyf_data.is_none() {
+        font.glyf_data = Some(data);
     }
 
     Ok(())
@@ -567,7 +568,7 @@ fn run_font_through_scaler(font: &mut Font) -> Result<Vec<ScaledGlyph>, Autohint
 
 fn update_glyf_loca_tables(font: &mut Font) -> Result<(), AutohintError> {
     let glyphs = &font
-        .glyf_ptr_owned
+        .glyf_data
         .as_ref()
         .ok_or(AutohintError::InvalidTable)?
         .glyphs;
@@ -847,10 +848,7 @@ pub(crate) fn handle_coverage(font: &mut Font) -> Result<(), AutohintError> {
         sfnt.sample_glyphs = sample_glyphs_local;
     }
 
-    let data = font
-        .glyf_ptr_owned
-        .as_mut()
-        .ok_or(AutohintError::InvalidTable)?;
+    let data = font.glyf_data.as_mut().ok_or(AutohintError::InvalidTable)?;
 
     let current_styles = &font.sfnt.glyph_styles;
 
@@ -868,17 +866,13 @@ pub(crate) fn handle_coverage(font: &mut Font) -> Result<(), AutohintError> {
     Ok(())
 }
 
-pub(crate) fn build_glyf_table(
-    font: &mut Font,
-    sfnt_idx: usize,
-    build_glyph_instructions: BuildGlyphInstructions,
-) -> Result<(), AutohintError> {
-    if font.glyf_ptr_owned.is_none() {
+pub(crate) fn build_glyf_table(font: &mut Font) -> Result<(), AutohintError> {
+    if font.glyf_data.is_none() {
         return Err(AutohintError::InvalidTable);
     }
 
     let data_num_glyphs = font
-        .glyf_ptr_owned
+        .glyf_data
         .as_ref()
         .map(|d| d.num_glyphs)
         .ok_or(AutohintError::InvalidTable)?;
@@ -889,25 +883,16 @@ pub(crate) fn build_glyf_table(
     }
 
     if !font.args.dehint {
-        let Some(build_glyph_instructions) = build_glyph_instructions else {
-            return Err(AutohintError::InvalidTable);
-        };
-
         let mut loop_count = data_num_glyphs as u32;
         if sfnt_max_components != 0 && font.args.composites {
             loop_count = loop_count.saturating_sub(1);
         }
 
         for idx in 0..loop_count {
-            build_glyph_instructions(font, sfnt_idx, GlyphId::new(idx))?;
+            build_glyph_instructions(font, GlyphId::new(idx))?;
 
             if let Some(progress) = font.progress {
-                let ret = progress(
-                    GlyphId::new(idx),
-                    GlyphId::new(loop_count),
-                    sfnt_idx as c_long,
-                    1,
-                );
+                let ret = progress(GlyphId::new(idx), GlyphId::new(loop_count), 0 as c_long, 1);
                 if ret != 0 {
                     return Err(AutohintError::ProgressCancelled);
                 }
@@ -920,13 +905,13 @@ pub(crate) fn build_glyf_table(
 }
 
 pub(crate) fn adjust_coverage(font: &mut Font) {
-    if font.glyf_ptr_owned.is_none() {
+    if font.glyf_data.is_none() {
         return;
     }
 
     let fallback_style = fallback_style(font);
 
-    let Some(data_ref) = font.glyf_ptr_owned.as_mut() else {
+    let Some(data_ref) = font.glyf_data.as_mut() else {
         return;
     };
     if data_ref.adjusted != 0 || data_ref.master_glyph_styles.is_empty() {

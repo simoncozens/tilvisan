@@ -298,7 +298,7 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
         return Err(AutohintError::NoUsableStyleMetrics);
     }
     let glyf_data = font
-        .glyf_ptr_owned
+        .glyf_data
         .as_mut()
         .ok_or(AutohintError::InvalidTable)?;
 

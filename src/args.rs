@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use crate::{scripts::ScriptClassIndex, StemWidthMode, StemWidthModes};
+use crate::{scripts::ScriptClassIndex, AutohintError, StemWidthMode, StemWidthModes};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "ttfautohint", version = "1.8.4", about = "TrueType autohinter", long_about = None)]
@@ -40,10 +40,6 @@ pub struct Args {
     #[arg(short = 'F', long, default_value = "")]
     pub family_suffix: String,
 
-    /// Set hinting limit (PPEM).
-    #[arg(short = 'G', long, default_value_t = 200)]
-    pub hinting_limit: u32,
-
     /// Set fallback stem width (font units).
     #[arg(short = 'H', long, default_value_t = 0)]
     pub fallback_stem_width: u32,
@@ -57,12 +53,16 @@ pub struct Args {
     pub detailed_info: bool,
 
     /// Set minimum hinting range (PPEM).
-    #[arg(short = 'l', long, default_value_t = 8)]
+    #[arg(short = 'l', long, value_parser = parse_hinting_range_min, default_value_t = 8)]
     pub hinting_range_min: u32,
 
     /// Set maximum hinting range (PPEM).
     #[arg(short = 'r', long, default_value_t = 50)]
     pub hinting_range_max: u32,
+
+    /// Set hinting limit (PPEM).
+    #[arg(short = 'G', long, default_value_t = 200)]
+    pub hinting_limit: u32,
 
     /// Control file.
     #[arg(short = 'm', long)]
@@ -105,7 +105,7 @@ pub struct Args {
     pub windows_compatibility: bool,
 
     /// Set increase x-height limit (PPEM).
-    #[arg(short = 'x', long, default_value_t = 14)]
+    #[arg(short = 'x', long, value_parser = parse_increase_x_height, default_value_t = 14)]
     pub increase_x_height: u32,
 
     /// X-height snapping exceptions.
@@ -183,4 +183,43 @@ pub(crate) fn parse_stem_width_mode_values(mode: &str) -> Result<StemWidthModes,
 
 pub(crate) fn parse_script_class_index(tag: &str) -> Result<ScriptClassIndex, String> {
     ScriptClassIndex::from_tag(tag)
+}
+
+pub(crate) fn parse_hinting_range_min(s: &str) -> Result<u32, String> {
+    let min = s
+        .parse::<u32>()
+        .map_err(|_| format!("'{}' is not a valid number", s))?;
+    if min >= 2 {
+        Ok(min)
+    } else {
+        Err("hinting-range-min must be at least 2".to_string())
+    }
+}
+
+pub(crate) fn parse_increase_x_height(s: &str) -> Result<u32, String> {
+    let val = s
+        .parse::<u32>()
+        .map_err(|_| format!("'{}' is not a valid number", s))?;
+    if val == 0 || val >= 6 {
+        Ok(val)
+    } else {
+        Err("increase-x-height must be 0 or >= 6".to_string())
+    }
+}
+
+impl Args {
+    pub fn validate_cross_field_constraints(&self) -> Result<(), AutohintError> {
+        if self.hinting_range_max < self.hinting_range_min {
+            return Err(AutohintError::ValidationError(
+                "hinting-range-max must be >= hinting-range-min".to_string(),
+            ));
+        }
+
+        if self.hinting_limit > 0 && self.hinting_limit < self.hinting_range_max {
+            return Err(AutohintError::ValidationError(
+                "hinting-limit must be 0 or >= hinting-range-max".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }

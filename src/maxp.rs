@@ -38,13 +38,6 @@ pub(crate) fn update_maxp_table_hinted(
     font: &mut Font,
     adjust_composites: bool,
     num_glyphs: u16,
-    max_composite_points: u16,
-    max_composite_contours: u16,
-    max_twilight_points: u16,
-    max_storage: u16,
-    max_stack_elements: u16,
-    max_instructions: u16,
-    max_components: u16,
 ) -> Result<(), AutohintError> {
     if font.get_processed(Tag::new(b"maxp")) {
         return Ok(());
@@ -53,6 +46,15 @@ pub(crate) fn update_maxp_table_hinted(
     let Some(table) = font.get_table(Tag::new(b"maxp")) else {
         return Ok(());
     };
+
+    let sfnt = &font.sfnt;
+    let max_components = sfnt.max_components;
+    let max_composite_points = sfnt.max_composite_points;
+    let max_composite_contours = sfnt.max_composite_contours;
+    let max_twilight_points = sfnt.max_twilight_points;
+    let max_storage = sfnt.max_storage;
+    let max_stack_elements = sfnt.max_stack_elements;
+    let max_instructions = sfnt.max_instructions;
 
     let bytes = FontData::new(table);
     let read_table = write_fonts::read::tables::maxp::Maxp::read(bytes)?;

@@ -1,4 +1,5 @@
 use crate::{
+    control_index::ResolvedControlEntry,
     intset::{BuildError as IntSetBuildError, IntSet, RangeExpr},
     AutohintError,
 };
@@ -85,6 +86,23 @@ impl NumberSetAst {
         }
 
         Ok(out)
+    }
+
+    fn to_intset(&self, min: i32, max: i32) -> Result<IntSet, AutohintError> {
+        let exprs: Vec<RangeExpr> = self
+            .elems
+            .iter()
+            .map(|elem| match elem {
+                NumberSetElem::Unlimited => RangeExpr::Unlimited,
+                NumberSetElem::RightLimited(v) => RangeExpr::RightLimited(*v),
+                NumberSetElem::LeftLimited(v) => RangeExpr::LeftLimited(*v),
+                NumberSetElem::Single(v) => RangeExpr::Single(*v),
+                NumberSetElem::Range(a, b) => RangeExpr::Range(*a, *b),
+            })
+            .collect();
+
+        IntSet::from_exprs(&exprs, min, max)
+            .map_err(|_| AutohintError::ValidationError("invalid number set".to_string()))
     }
 }
 
@@ -1179,6 +1197,156 @@ impl ControlSemanticProvider for SkrifaProvider {
             Some(Glyph::Simple(g)) => Some(g.num_points()),
             Some(Glyph::Composite(g)) => Some(g.components().count() + 4),
         }
+    }
+}
+
+pub(crate) fn parse_control_entries<P: crate::control::ControlSemanticProvider>(
+    input: &str,
+    provider: &P,
+) -> Result<Vec<ResolvedControlEntry>, AutohintError> {
+    let entries = crate::control::parse_control(input)?;
+    crate::control::validate_control_entries(&entries, provider)?;
+
+    let mut out = Vec::new();
+
+    for (idx, entry) in entries.iter().enumerate() {
+        let line_number = (idx + 1) as i32;
+
+        match entry {
+            ControlEntryAst::Delta {
+                font_idx,
+                glyph,
+                mode,
+                points,
+                x_shift,
+                y_shift,
+                ppems,
+            } => {
+                let glyph_idx = resolve_glyph_ref(*font_idx, glyph, provider, idx + 1)?;
+                let point_count = provider
+                    .glyph_point_count(*font_idx, glyph_idx)
+                    .ok_or_else(|| AutohintError::ControlFileValidationError {
+                        entry_index: idx + 1,
+                        message: format!(
+                            "unable to get point count for glyph index {} in font {}",
+                            glyph_idx, font_idx
+                        ),
+                    })?;
+                let points = points.to_intset(0, point_count as i32 - 1)?;
+                let ppems = ppems.to_intset(
+                    crate::control::CONTROL_DELTA_PPEM_MIN,
+                    crate::control::CONTROL_DELTA_PPEM_MAX,
+                )?;
+
+                out.push(ResolvedControlEntry::Delta {
+                    font_idx: *font_idx,
+                    glyph_idx,
+                    before_iup: matches!(mode, PointMode::Touch),
+                    points,
+                    ppems,
+                    x_shift: (*x_shift * crate::control::CONTROL_DELTA_FACTOR as f64).round()
+                        as i32,
+                    y_shift: (*y_shift * crate::control::CONTROL_DELTA_FACTOR as f64).round()
+                        as i32,
+                    line_number,
+                });
+            }
+            ControlEntryAst::SegmentDirection {
+                font_idx,
+                glyph,
+                dir,
+                points,
+                offsets,
+            } => {
+                let glyph_idx = resolve_glyph_ref(*font_idx, glyph, provider, idx + 1)?;
+                let point_count = provider
+                    .glyph_point_count(*font_idx, glyph_idx)
+                    .ok_or_else(|| AutohintError::ControlFileValidationError {
+                        entry_index: idx + 1,
+                        message: format!(
+                            "unable to get point count for glyph index {} in font {}",
+                            glyph_idx, font_idx
+                        ),
+                    })?;
+                let points = points.to_intset(0, point_count as i32 - 1)?;
+                let (left_offset, right_offset) = offsets.unwrap_or((0, 0));
+
+                out.push(ResolvedControlEntry::SegmentDirection {
+                    font_idx: *font_idx,
+                    glyph_idx,
+                    points,
+                    dir: match dir {
+                        SegmentDirection::Left => -1,
+                        SegmentDirection::Right => 1,
+                        SegmentDirection::NoDir => 4,
+                    },
+                    left_offset,
+                    right_offset,
+                    line_number,
+                });
+            }
+            ControlEntryAst::StyleAdjust {
+                font_idx,
+                script,
+                feature,
+                glyphs,
+            } => {
+                let mut glyph_indices = Vec::new();
+                for glyph_elem in glyphs {
+                    match glyph_elem {
+                        GlyphSetElem::Single(g) => {
+                            glyph_indices.push(resolve_glyph_ref(*font_idx, g, provider, idx + 1)?);
+                        }
+                        GlyphSetElem::Range(_, _) => {
+                            return Err(AutohintError::ControlFileValidationError {
+                                entry_index: idx + 1,
+                                message: "glyph ranges in StyleAdjust not yet supported"
+                                    .to_string(),
+                            });
+                        }
+                    }
+                }
+
+                // Resolve script/feature directly to a Skrifa style index.
+                let resolved_style =
+                    crate::globals::resolve_script_feature_to_style_index(script, feature)
+                        .ok_or_else(|| AutohintError::ControlFileValidationError {
+                            entry_index: idx + 1,
+                            message: format!(
+                                "unknown or unsupported style: {}/{}",
+                                script, feature
+                            ),
+                        })?;
+
+                out.push(ResolvedControlEntry::StyleAdjust {
+                    font_idx: *font_idx,
+                    style: resolved_style as u16,
+                    glyph_indices,
+                });
+            }
+            ControlEntryAst::StemWidthAdjust { .. } => {
+                out.push(ResolvedControlEntry::StemWidthAdjust);
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+pub(crate) fn resolve_glyph_ref<P: crate::control::ControlSemanticProvider>(
+    font_idx: i32,
+    glyph: &GlyphRef,
+    provider: &P,
+    entry_index: usize,
+) -> Result<GlyphId, AutohintError> {
+    match glyph {
+        GlyphRef::Index(idx) => Ok(GlyphId::new(*idx)),
+        GlyphRef::Name(name) => provider.glyph_index_by_name(font_idx, name).ok_or_else(|| {
+            AutohintError::ControlFileValidationError {
+                entry_index,
+                message: format!("invalid glyph name `{}`", name),
+            }
+        }),
     }
 }
 

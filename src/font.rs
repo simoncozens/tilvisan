@@ -81,7 +81,7 @@ pub(crate) struct Font {
     pub(crate) in_buf: Vec<u8>,
     pub(crate) reference_buf: Option<Vec<u8>>,
     pub(crate) sfnt: Sfnt,
-    pub(crate) glyf_ptr_owned: Option<GlyfData>,
+    pub(crate) glyf_data: Option<GlyfData>,
     pub(crate) tables: BTreeMap<Tag, TableEntry>, // tag → raw bytes + processing metadata
 
     // Computed per-SFNT fields (like current SFNT in ta.h):
