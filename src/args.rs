@@ -1,11 +1,8 @@
-use std::{io, path::PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
 
-use crate::{StemWidthMode, StemWidthModes};
-
-const HINTING_RANGE_MIN_MIN: u32 = 2;
-const INCREASE_X_HEIGHT_MIN: u32 = 6;
+use crate::{scripts::ScriptClassIndex, StemWidthMode, StemWidthModes};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "ttfautohint", version = "1.8.4", about = "TrueType autohinter", long_about = None)]
@@ -32,12 +29,12 @@ pub struct Args {
     pub dehint: bool,
 
     /// Set default script.
-    #[arg(short = 'D', long, default_value = "latn")]
-    pub default_script: String,
+    #[arg(short = 'D', long, value_parser = parse_script_class_index, default_value = "latn")]
+    pub default_script: ScriptClassIndex,
 
     /// Set fallback script.
-    #[arg(short = 'f', long, default_value = "none")]
-    pub fallback_script: String,
+    #[arg(short = 'f', long, value_parser = parse_script_class_index, default_value = "none")]
+    pub fallback_script: ScriptClassIndex,
 
     /// Set family suffix.
     #[arg(short = 'F', long, default_value = "")]
@@ -136,8 +133,10 @@ impl Default for Args {
             stem_width_mode: StemWidthModes::default(),
             composites: false,
             dehint: false,
-            default_script: "latn".to_string(),
-            fallback_script: "none".to_string(),
+            default_script: ScriptClassIndex::from_tag("latn")
+                .expect("'latn' must exist in Skrifa script classes"),
+            fallback_script: ScriptClassIndex::from_tag("none")
+                .expect("'none' must exist in Skrifa script classes"),
             family_suffix: String::new(),
             hinting_limit: 200,
             fallback_stem_width: 0,
@@ -180,4 +179,8 @@ pub(crate) fn parse_stem_width_mode_values(mode: &str) -> Result<StemWidthModes,
         gdi_cleartype: parse_mode(chars[1])?,
         dw_cleartype: parse_mode(chars[2])?,
     })
+}
+
+pub(crate) fn parse_script_class_index(tag: &str) -> Result<ScriptClassIndex, String> {
+    ScriptClassIndex::from_tag(tag)
 }

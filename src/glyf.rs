@@ -48,9 +48,7 @@ pub struct StyleCvtData {
 type BuildGlyphInstructions = Option<fn(&mut Font, usize, GlyphId) -> Result<i32, AutohintError>>;
 
 fn fallback_style(font: &Font) -> u16 {
-    crate::orchestrate::fallback_style_for_script(crate::orchestrate::script_to_index(
-        &font.args.fallback_script,
-    )) as u16
+    crate::orchestrate::fallback_style_for_script(font.args.fallback_script) as u16
 }
 
 #[derive(Copy, Clone, Default)]

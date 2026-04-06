@@ -30,6 +30,7 @@ pub use args::Args;
 pub use error::AutohintError;
 pub use info::{build_version_string, InfoData};
 pub use orchestrate::{ttfautohint, TtfautohintCall};
+pub use scripts::ScriptClassIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StemWidthMode {

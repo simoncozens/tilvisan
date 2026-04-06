@@ -7,7 +7,9 @@ use std::{
 
 use libtest_mimic::{Arguments, Trial};
 use similar::TextDiff;
-use ttfautohint_rs::{ttfautohint, Args, InfoData, StemWidthModes, TtfautohintCall};
+use ttfautohint_rs::{
+    ttfautohint, Args, InfoData, ScriptClassIndex, StemWidthModes, TtfautohintCall,
+};
 
 fn main() {
     let args = Arguments::from_args();
@@ -127,8 +129,8 @@ fn run_ttfautohint(input_file: &Path, output_file: &Path) {
         stem_width_mode: StemWidthModes::default(),
         composites: true,
         dehint: false,
-        default_script: "latn".to_string(),
-        fallback_script: "none".to_string(),
+        default_script: ScriptClassIndex::from_tag("latn").unwrap(),
+        fallback_script: ScriptClassIndex::from_tag("none").unwrap(),
         family_suffix: "".to_string(),
         hinting_limit: 200,
         fallback_stem_width: 0,

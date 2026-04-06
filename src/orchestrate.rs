@@ -12,7 +12,6 @@ use crate::{
     maxp::sfnt_has_ttfautohint_glyph,
     prep::build_prep_table,
     recorder::build_glyph_instructions,
-    style::StyleIndex,
     Args, AutohintError,
 };
 use std::{
@@ -36,7 +35,7 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
     let dehint = font.args.dehint;
     let adjust_subglyphs = font.args.adjust_subglyphs || font.args.pre_hinting;
     let hint_composites = font.args.composites;
-    let fallback_style = fallback_style_for_script(script_to_index(&font.args.fallback_script));
+    let fallback_style = fallback_style_for_script(font.args.fallback_script);
 
     if sfnt_has_ttfautohint_glyph(font)? {
         return Err(AutohintError::FontAlreadyProcessed);
@@ -150,25 +149,6 @@ pub fn ttf_autohint_font(font: &mut TaFont) -> Result<Vec<u8>, AutohintError> {
 
     Ok(font.build_ttf_complete(font.have_dsig))
 }
-
-// Keep these tables in sync with C sources:
-// - lib/ttfautohint-scripts.h for DEFAULT_SCRIPTS
-// - lib/tastyles.h (TA_COVERAGE_DEFAULT styles) for FALLBACK_SCRIPTS
-const DEFAULT_SCRIPTS: &[&str] = &[
-    "adlm", "arab", "armn", "avst", "bamu", "beng", "buhd", "cakm", "cans", "cari", "cher", "copt",
-    "cprt", "cyrl", "deva", "dsrt", "ethi", "geor", "geok", "glag", "goth", "grek", "gujr", "guru",
-    "hebr", "hmnp", "kali", "khmr", "khms", "knda", "lao", "latn", "latb", "latp", "lisu", "mlym",
-    "medf", "mong", "mymr", "nkoo", "olck", "orkh", "osge", "osma", "rohg", "saur", "shaw", "sinh",
-    "sund", "taml", "tavt", "telu", "tfng", "thai", "vaii", "yezi", "none",
-];
-
-const FALLBACK_SCRIPTS: &[&str] = &[
-    "adlm", "arab", "armn", "avst", "bamu", "beng", "buhd", "cakm", "cans", "cari", "cher", "copt",
-    "cprt", "deva", "dsrt", "ethi", "geor", "geok", "glag", "goth", "gujr", "guru", "hebr", "hmnp",
-    "kali", "khmr", "khms", "knda", "lao", "latb", "latp", "latn", "lisu", "mlym", "medf", "mong",
-    "mymr", "nkoo", "olck", "orkh", "osge", "osma", "rohg", "saur", "shaw", "sinh", "sund", "taml",
-    "tavt", "telu", "tfng", "thai", "vaii", "yezi", "none",
-];
 
 pub struct TtfautohintCall {
     pub in_buf: Vec<u8>,
@@ -285,37 +265,7 @@ fn validate_options(args: &Args) -> io::Result<()> {
         ));
     }
 
-    validate_default_script(&args.default_script)?;
-    validate_fallback_script(&args.fallback_script)?;
-
     Ok(())
-}
-
-fn validate_default_script(value: &str) -> io::Result<()> {
-    if DEFAULT_SCRIPTS.contains(&value) {
-        return Ok(());
-    }
-
-    Err(io::Error::new(
-        io::ErrorKind::InvalidInput,
-        format!("default-script '{value}' is not supported"),
-    ))
-}
-
-fn validate_fallback_script(value: &str) -> io::Result<()> {
-    if FALLBACK_SCRIPTS.contains(&value) {
-        return Ok(());
-    }
-
-    Err(io::Error::new(
-        io::ErrorKind::InvalidInput,
-        format!("fallback-script '{value}' is not supported"),
-    ))
-}
-
-pub(crate) fn script_to_index(tag: &str) -> i32 {
-    // Fine to unwrap: callers have already validated the tag is in DEFAULT_SCRIPTS.
-    DEFAULT_SCRIPTS.iter().position(|&s| s == tag).unwrap() as i32
 }
 
 pub(crate) fn parse_number_set_to_intset(input: &str, min: i32, max: i32) -> Option<IntSet> {
@@ -507,8 +457,8 @@ fn number_set_to_intset(set: &NumberSetAst, min: i32, max: i32) -> Result<IntSet
         .map_err(|_| AutohintError::ValidationError("invalid number set".to_string()))
 }
 
-pub(crate) fn fallback_style_for_script(script_index: i32) -> i32 {
-    crate::style_metadata::default_style_for_script(script_index as usize)
+pub(crate) fn fallback_style_for_script(script_index: crate::scripts::ScriptClassIndex) -> i32 {
+    crate::style_metadata::default_style_for_script(script_index.as_usize())
         .map(|style| style as i32)
         .or_else(|| crate::style_metadata::none_default_style().map(|style| style as i32))
         .unwrap_or(0)

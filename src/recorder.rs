@@ -1554,9 +1554,8 @@ pub(crate) fn build_glyph_instructions(
     }
 
     let gstyle = sfnt_ref.glyph_styles[idx_usize];
-    let fallback_style = crate::orchestrate::fallback_style_for_script(
-        crate::orchestrate::script_to_index(&font_ref.args.fallback_script),
-    ) as usize;
+    let fallback_style =
+        crate::orchestrate::fallback_style_for_script(font_ref.args.fallback_script) as usize;
     let mut sfnt_max_storage = sfnt_ref.max_storage;
     let mut sfnt_max_stack_elements = sfnt_ref.max_stack_elements;
     let mut sfnt_max_twilight_points = sfnt_ref.max_twilight_points;

@@ -259,9 +259,7 @@ fn build_cvt_blob(
 fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
     // Clone sample_glyphs to release the borrow before mutable access
     let sample_glyphs = font.sfnt.sample_glyphs.clone();
-    let fallback_style = crate::orchestrate::fallback_style_for_script(
-        crate::orchestrate::script_to_index(&font.args.fallback_script),
-    );
+    let fallback_style = crate::orchestrate::fallback_style_for_script(font.args.fallback_script);
 
     let mut style_metrics = vec![];
 
