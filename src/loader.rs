@@ -144,12 +144,12 @@ impl LoaderComponent {
             glyph_id: component.glyph.into(),
             flags: component.flags.bits(),
             arg1: match component.anchor {
-                write_fonts::tables::glyf::Anchor::Offset { x, y: _ } => x,
-                write_fonts::tables::glyf::Anchor::Point { base, component: _ } => base as i16,
+                skrifa::raw::tables::glyf::Anchor::Offset { x, y: _ } => x,
+                skrifa::raw::tables::glyf::Anchor::Point { base, component: _ } => base as i16,
             },
             arg2: match component.anchor {
-                write_fonts::tables::glyf::Anchor::Offset { x: _, y } => y,
-                write_fonts::tables::glyf::Anchor::Point { base: _, component } => component as i16,
+                skrifa::raw::tables::glyf::Anchor::Offset { x: _, y } => y,
+                skrifa::raw::tables::glyf::Anchor::Point { base: _, component } => component as i16,
             },
             xx: f2dot14_to_f16dot16(component.transform.xx),
             xy: f2dot14_to_f16dot16(component.transform.xy),
