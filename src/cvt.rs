@@ -8,7 +8,7 @@ use crate::{
 use indexmap::IndexMap;
 use skrifa::{
     outline::{compute_unscaled_style_metrics_exported, STYLE_CLASSES},
-    FontRef, GlyphId, Tag,
+    GlyphId,
 };
 
 // From tabytecode.h: CVT runtime section size
@@ -24,18 +24,6 @@ pub struct StyleMetrics {
     pub blue_adjustment: Vec<u8>,
 }
 
-pub(crate) fn build_cvt_table_store(font: &mut Font) -> Result<(), AutohintError> {
-    let blob_data = build_cvt_table(font)?;
-
-    if font.get_processed(Tag::new(b"glyf")) {
-        return Ok(());
-    }
-
-    font.update_table(Tag::new(b"cvt "), blob_data.bytecode.as_slice());
-
-    Ok(())
-}
-
 fn compute_style_metrics(
     font: &mut Font,
     style_index: usize,
@@ -45,16 +33,11 @@ fn compute_style_metrics(
         return Err(AutohintError::MissingStyleSampleGlyph);
     }
 
-    let ttf_bytes = font.build_ttf();
-    let Ok(font) = FontRef::new(&ttf_bytes) else {
-        return Err(AutohintError::InvalidTable);
-    };
-
     let Some(style_class) = STYLE_CLASSES.get(style_index) else {
         return Err(AutohintError::InvalidTable);
     };
 
-    let metrics = compute_unscaled_style_metrics_exported(&font, &[], style_class);
+    let metrics = compute_unscaled_style_metrics_exported(&font.fontref, &[], style_class);
 
     let mut hwidths = Vec::with_capacity(metrics.horizontal_widths.len());
     for &w in &metrics.horizontal_widths {
@@ -256,7 +239,7 @@ fn build_cvt_blob(
     })
 }
 
-fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
+pub(crate) fn build_cvt_table(font: &mut Font) -> Result<(), AutohintError> {
     // Clone sample_glyphs to release the borrow before mutable access
     let sample_glyphs = font.sample_glyphs.clone();
     let fallback_style = crate::orchestrate::fallback_style_for_script(font.args.fallback_script);
@@ -285,7 +268,7 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
         }
     }
 
-    let units_per_em = crate::maxp::units_per_em_in_font_binary(&font.in_buf)?;
+    let units_per_em = font.head.units_per_em;
 
     let blob_data = build_cvt_blob(
         &style_metrics,
@@ -300,5 +283,6 @@ fn build_cvt_table(font: &mut Font) -> Result<CvtBlobData, AutohintError> {
 
     glyf_data.style_offsets = blob_data.style_offsets.clone();
 
-    Ok(blob_data)
+    font.cvt = blob_data.bytecode.as_slice().to_vec();
+    Ok(())
 }

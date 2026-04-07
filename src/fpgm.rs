@@ -2,13 +2,11 @@
 use crate::{
     bytecode::{Bytecode, CONTROL_DELTA_PPEM_MIN},
     bytes,
-    font::Font,
     glyf::GlyfData,
     opcodes::*,
     style::StyleIndex,
     AutohintError,
 };
-use skrifa::Tag;
 /*
  * Due to a bug in FreeType up to and including version 2.4.7,
  * it is not possible to use MD_orig with twilight points.
@@ -5738,7 +5736,7 @@ const FPGM_bci_hint_glyph: &[u8] = &bytes![
     ENDF,
 ];
 
-fn build_fpgm(
+pub(crate) fn build_fpgm(
     glyphdata: &GlyfData,
     increase_x_height: u32,
     has_control_data: bool,
@@ -5949,28 +5947,4 @@ fn build_fpgm(
 
     bytecode.extend_bytes(FPGM_bci_hint_glyph);
     Ok(bytecode)
-}
-
-pub(crate) fn build_fpgm_table(
-    font: &mut Font,
-    glyf_data: &GlyfData,
-    increase_x_height: u32,
-    has_control_data: bool,
-    font_fallback_style: usize,
-) -> Result<usize, AutohintError> {
-    if font.get_processed(Tag::new(b"glyf")) {
-        return Ok(0);
-    }
-
-    let bytecode = build_fpgm(
-        glyf_data,
-        increase_x_height,
-        has_control_data,
-        font_fallback_style,
-    )?;
-    let out: Vec<u8> = bytecode.as_slice().to_vec();
-    let fpgm_len = out.len();
-    font.update_table(Tag::new(b"fpgm"), &out);
-
-    Ok(fpgm_len)
 }

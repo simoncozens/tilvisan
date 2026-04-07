@@ -1,10 +1,8 @@
-use skrifa::{raw::FontData, Tag};
+use skrifa::Tag;
 use write_fonts::{
-    from_obj::ToOwnedTable,
-    read::FontRead,
     tables::{
         glyf::Glyph,
-        gpos::{AnchorTable, Gpos, PositionLookup},
+        gpos::{AnchorTable, PositionLookup},
     },
     NullableOffsetMarker,
 };
@@ -49,18 +47,12 @@ pub(crate) fn update_gpos(font: &mut Font) -> Result<(), AutohintError> {
         return Ok(());
     }
 
-    let Some(table) = font.get_table(Tag::new(b"GPOS")) else {
-        return Ok(());
-    };
-
-    let data = font
-        .glyf_data
-        .as_ref()
-        .ok_or(AutohintError::NullPointer)?;
+    let data = font.glyf_data.as_ref().ok_or(AutohintError::NullPointer)?;
     let glyphs = &data.glyphs;
 
-    let read_table = write_fonts::read::tables::gpos::Gpos::read(FontData::new(table))?;
-    let mut write_table: Gpos = read_table.to_owned_table();
+    let Some(mut write_table) = font.gpos.take() else {
+        return Ok(());
+    };
 
     for lookup in write_table.lookup_list.lookups.iter_mut() {
         match &mut **lookup {
@@ -185,9 +177,8 @@ pub(crate) fn update_gpos(font: &mut Font) -> Result<(), AutohintError> {
         }
     }
 
-    let dumped = write_fonts::dump_table(&write_table)?;
-    font.update_table(Tag::new(b"GPOS"), &dumped);
-    font.set_processed(Tag::new(b"GPOS"), true);
+    font.gpos = Some(write_table);
+    font.set_processed(Tag::new(b"GPOS"));
 
     Ok(())
 }

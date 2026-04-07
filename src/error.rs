@@ -7,6 +7,8 @@ pub enum AutohintError {
     FontReadError(#[from] ReadError),
     #[error("Font write error: {0}")]
     FontWriteError(#[from] write_fonts::error::Error),
+    #[error("Error building font: {0}")]
+    BuilderError(#[from] write_fonts::BuilderError),
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Invalid argument: {0}")]

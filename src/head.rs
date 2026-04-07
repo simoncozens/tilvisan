@@ -1,10 +1,5 @@
 use chrono::{DateTime, TimeZone, Utc};
-use skrifa::raw::{FontData, FontRead};
-use write_fonts::{
-    from_obj::ToOwnedTable,
-    tables::head::{Flags, Head},
-    types::{LongDateTime, Tag},
-};
+use write_fonts::{tables::head::Flags, types::LongDateTime};
 
 use crate::{error::AutohintError, font::Font};
 // The TrueType epoch (1st January 1904) as a Unix timestamp.
@@ -17,18 +12,11 @@ fn seconds_since_mac_epoch(datetime: DateTime<Utc>) -> i64 {
 }
 pub(crate) fn update_head(font: &mut Font) -> Result<(), AutohintError> {
     // Do this unconditionally on save.
-    if let Some(head) = font.get_table(Tag::new(b"head")) {
-        let head_data = FontData::new(head);
-        let read_head = skrifa::raw::tables::head::Head::read(head_data)?;
-        let mut write_head: Head = read_head.to_owned_table();
-        write_head.flags = write_head
-            .flags
-            .union(Flags::INSTRUCTIONS_MAY_DEPEND_ON_POINT_SIZE)
-            .difference(Flags::INSTRUCTIONS_MAY_ALTER_ADVANCE_WIDTH);
-        write_head.modified = LongDateTime::new(seconds_since_mac_epoch(Utc::now()));
-        let dumped = write_fonts::dump_table(&write_head)?;
-        font.update_table(Tag::new(b"head"), &dumped);
-        font.set_processed(Tag::new(b"head"), true);
-    }
+    font.head.flags = font
+        .head
+        .flags
+        .union(Flags::INSTRUCTIONS_MAY_DEPEND_ON_POINT_SIZE)
+        .difference(Flags::INSTRUCTIONS_MAY_ALTER_ADVANCE_WIDTH);
+    font.head.modified = LongDateTime::new(seconds_since_mac_epoch(Utc::now()));
     Ok(())
 }

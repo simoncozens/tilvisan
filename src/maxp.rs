@@ -1,23 +1,10 @@
-use skrifa::{
-    raw::{FontData, FontRead, TableProvider},
-    FontRef, Tag,
-};
-use write_fonts::{dump_table, from_obj::ToOwnedTable, tables::maxp::Maxp};
+use skrifa::Tag;
+use write_fonts::tables::maxp::Maxp;
 
 use crate::{error::AutohintError, font::Font, opcodes::FunctionNumbers};
 
 pub(crate) fn update_maxp_table_dehint(font: &mut Font) -> Result<(), AutohintError> {
-    if font.get_processed(Tag::new(b"maxp")) {
-        return Ok(());
-    }
-
-    let Some(table) = font.get_table(Tag::new(b"maxp")) else {
-        return Ok(());
-    };
-
-    let bytes = FontData::new(table);
-    let read_table = write_fonts::read::tables::maxp::Maxp::read(bytes)?;
-    let mut write_table: Maxp = read_table.to_owned_table();
+    let write_table: &mut Maxp = &mut font.maxp;
     write_table.max_zones = Some(0);
     write_table.max_twilight_points = Some(0);
     write_table.max_storage = Some(0);
@@ -26,14 +13,9 @@ pub(crate) fn update_maxp_table_dehint(font: &mut Font) -> Result<(), AutohintEr
     write_table.max_stack_elements = Some(0);
     write_table.max_size_of_instructions = Some(0);
 
-    let out = dump_table(&write_table)?;
-
-    font.update_table(Tag::new(b"maxp"), &out);
-
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_maxp_table_hinted(
     font: &mut Font,
     adjust_composites: bool,
@@ -43,21 +25,15 @@ pub(crate) fn update_maxp_table_hinted(
         return Ok(());
     }
 
-    let Some(table) = font.get_table(Tag::new(b"maxp")) else {
-        return Ok(());
-    };
+    let max_components = font.final_maxp_data.max_component_elements;
+    let max_composite_points = font.final_maxp_data.max_composite_points;
+    let max_composite_contours = font.final_maxp_data.max_composite_contours;
+    let max_twilight_points = font.final_maxp_data.max_twilight_points;
+    let max_storage = font.final_maxp_data.max_storage;
+    let max_stack_elements = font.final_maxp_data.max_stack_elements;
+    let max_instructions = font.final_maxp_data.max_size_of_instructions;
 
-    let max_components = font.max_components;
-    let max_composite_points = font.max_composite_points;
-    let max_composite_contours = font.max_composite_contours;
-    let max_twilight_points = font.max_twilight_points;
-    let max_storage = font.max_storage;
-    let max_stack_elements = font.max_stack_elements;
-    let max_instructions = font.max_instructions;
-
-    let bytes = FontData::new(table);
-    let read_table = write_fonts::read::tables::maxp::Maxp::read(bytes)?;
-    let mut write_table: Maxp = read_table.to_owned_table();
+    let write_table: &mut Maxp = &mut font.maxp;
     if adjust_composites {
         write_table.num_glyphs = num_glyphs;
         write_table.max_composite_points = Some(max_composite_points);
@@ -72,34 +48,5 @@ pub(crate) fn update_maxp_table_hinted(
     write_table.max_size_of_instructions = Some(max_instructions);
     write_table.max_component_elements = Some(max_components);
 
-    let out = dump_table(&write_table)?;
-
-    font.update_table(Tag::new(b"maxp"), &out);
-
     Ok(())
-}
-const OS2_FSTYPE_OFFSET: usize = 8;
-
-pub(crate) fn sfnt_has_legal_permission(font: &Font) -> Result<bool, AutohintError> {
-    let Some(os2_table) = font.get_table(Tag::new(b"OS/2")) else {
-        return Ok(true);
-    };
-
-    if os2_table.len() > OS2_FSTYPE_OFFSET + 1 && os2_table[OS2_FSTYPE_OFFSET + 1] == 0x02 {
-        return Ok(false);
-    }
-
-    Ok(true)
-}
-
-pub(crate) fn num_glyphs_in_font_binary(data: &[u8]) -> Result<u16, AutohintError> {
-    let fontref = FontRef::new(data)?;
-    let maxp = fontref.maxp()?;
-    Ok(maxp.num_glyphs())
-}
-
-pub(crate) fn units_per_em_in_font_binary(data: &[u8]) -> Result<u16, AutohintError> {
-    let fontref = FontRef::new(data)?;
-    let head = fontref.head()?;
-    Ok(head.units_per_em())
 }

@@ -49,7 +49,7 @@ fn compute_cvt_blue_offsets(font: &Font, ta_style: StyleIndex) -> Option<(u16, u
     Some((cvt_blue_refs_offset, cvt_blue_shoots_offset))
 }
 
-fn get_glyph(font: &Font, glyph_idx: GlyphId) -> Option<&ScaledGlyph> {
+fn get_glyph<'a>(font: &'a Font, glyph_idx: GlyphId) -> Option<&'a ScaledGlyph> {
     // Bounds check and get GlyfData pointer.
     font.glyf_data.as_ref()?;
 
@@ -761,6 +761,7 @@ fn recorder_reset_hints_record(recorder: &mut RustRecorder) {
     recorder.hints_record_num_actions = 0;
 }
 
+#[allow(clippy::too_many_arguments)]
 fn marshal_action_fields(
     recorder: &RustRecorder,
     action: u32,
@@ -921,6 +922,7 @@ fn marshal_action_fields(
     Some(m)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn hints_recorder_marshal_and_emit_action(
     recorder: &RustRecorder,
     action: u32,
@@ -1168,6 +1170,7 @@ fn recorder_replay_process_hint_record(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn recorder_record_hints_for_ppem(
     recorder: &mut RustRecorder,
     font: &Font,
@@ -1204,8 +1207,7 @@ fn recorder_record_hints_for_ppem(
         return Err(AutohintError::NullPointer);
     };
 
-    let top_to_bottom_hinting =
-        crate::style_metadata::script_hints_top_to_bottom(ta_style.as_usize());
+    let top_to_bottom_hinting = ta_style.script_hints_top_to_bottom();
 
     for rec in &rust_plan.records {
         let result = recorder_replay_process_hint_record(
@@ -1548,10 +1550,6 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
     let gstyle = font.glyph_styles[idx_usize];
     let fallback_style =
         crate::orchestrate::fallback_style_for_script(font.args.fallback_script) as usize;
-    let mut sfnt_max_storage = font.max_storage;
-    let mut sfnt_max_stack_elements = font.max_stack_elements;
-    let mut sfnt_max_twilight_points = font.max_twilight_points;
-    let mut sfnt_max_instructions = font.max_instructions;
 
     if font.args.debug {
         log_debug_heading(&format!("glyph {}", idx), '=');
@@ -1591,14 +1589,11 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
             bytecode.extend(emitted);
 
             let num_storage = StorageAreaLocations::sal_segment_offset as u16;
-            if num_storage > sfnt_max_storage {
-                sfnt_max_storage = num_storage;
-            }
+            font.final_maxp_data.update_max_storage(num_storage);
 
             let num_stack_elements = ADDITIONAL_STACK_ELEMENTS.saturating_add(num_args as u16);
-            if num_stack_elements > sfnt_max_stack_elements {
-                sfnt_max_stack_elements = num_stack_elements;
-            }
+            font.final_maxp_data
+                .update_max_stack_elements(num_stack_elements);
 
             use_gstyle_data = false;
         } else {
@@ -1650,14 +1645,11 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
                 bytecode.extend(emitted);
 
                 let num_storage = StorageAreaLocations::sal_segment_offset as u16;
-                if num_storage > sfnt_max_storage {
-                    sfnt_max_storage = num_storage;
-                }
+                font.final_maxp_data.update_max_storage(num_storage);
 
                 let num_stack_elements = ADDITIONAL_STACK_ELEMENTS.saturating_add(num_args as u16);
-                if num_stack_elements > sfnt_max_stack_elements {
-                    sfnt_max_stack_elements = num_stack_elements;
-                }
+                font.final_maxp_data
+                    .update_max_stack_elements(num_stack_elements);
 
                 use_gstyle_data = false;
             } else {
@@ -1731,21 +1723,16 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
 
                 let num_storage = (StorageAreaLocations::sal_segment_offset as u16)
                     .saturating_add(segment_result.num_segments.saturating_mul(3));
-                if num_storage > sfnt_max_storage {
-                    sfnt_max_storage = num_storage;
-                }
-
                 let num_twilight_points = segment_result.num_segments.saturating_mul(2);
-                if num_twilight_points > sfnt_max_twilight_points {
-                    sfnt_max_twilight_points = num_twilight_points;
-                }
-
                 let num_stack_elements = ADDITIONAL_STACK_ELEMENTS
                     .saturating_add(recorder.num_stack_elements)
                     .saturating_add(segment_result.num_args);
-                if num_stack_elements > sfnt_max_stack_elements {
-                    sfnt_max_stack_elements = num_stack_elements;
-                }
+
+                font.final_maxp_data.update_max_storage(num_storage);
+                font.final_maxp_data
+                    .update_max_twilight_points(num_twilight_points);
+                font.final_maxp_data
+                    .update_max_stack_elements(num_stack_elements);
 
                 if action_hints_records.len() == 1 && !bytecode.optimize_push([pos0, pos1, pos2]) {
                     bytecode.truncate(pos0);
@@ -1801,14 +1788,10 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
             bytecode.extend(emitted);
 
             let num_storage = StorageAreaLocations::sal_segment_offset as u16;
-            if num_storage > sfnt_max_storage {
-                sfnt_max_storage = num_storage;
-            }
-
             let num_stack_elements = ADDITIONAL_STACK_ELEMENTS.saturating_add(num_args as u16);
-            if num_stack_elements > sfnt_max_stack_elements {
-                sfnt_max_stack_elements = num_stack_elements;
-            }
+            font.final_maxp_data.update_max_storage(num_storage);
+            font.final_maxp_data
+                .update_max_stack_elements(num_stack_elements);
 
             use_gstyle_data = false;
         } else {
@@ -1881,21 +1864,15 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
 
             let num_storage = (StorageAreaLocations::sal_segment_offset as u16)
                 .saturating_add(segment_result.num_segments.saturating_mul(3));
-            if num_storage > sfnt_max_storage {
-                sfnt_max_storage = num_storage;
-            }
-
             let num_twilight_points = segment_result.num_segments.saturating_mul(2);
-            if num_twilight_points > sfnt_max_twilight_points {
-                sfnt_max_twilight_points = num_twilight_points;
-            }
-
             let num_stack_elements = ADDITIONAL_STACK_ELEMENTS
                 .saturating_add(recorder.num_stack_elements)
                 .saturating_add(segment_result.num_args);
-            if num_stack_elements > sfnt_max_stack_elements {
-                sfnt_max_stack_elements = num_stack_elements;
-            }
+            font.final_maxp_data.update_max_storage(num_storage);
+            font.final_maxp_data
+                .update_max_twilight_points(num_twilight_points);
+            font.final_maxp_data
+                .update_max_stack_elements(num_stack_elements);
 
             if action_hints_records.len() == 1 && !bytecode.optimize_push([pos0, pos1, pos2]) {
                 bytecode.truncate(pos0);
@@ -1906,9 +1883,8 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
     if font.control.has_index() {
         let (emitted, max_stack) =
             build_delta_exceptions(font.control.index(), idx, &mut glyph_ref);
-        if max_stack > sfnt_max_stack_elements.into() {
-            sfnt_max_stack_elements = max_stack as u16;
-        }
+        font.final_maxp_data
+            .update_max_stack_elements(max_stack as u16);
         bytecode.extend(emitted);
     }
 
@@ -1921,14 +1897,8 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
         return Err(AutohintError::NullPointer);
     }
     let ins_len = bytecode.as_slice().len() as u16;
-    if ins_len > sfnt_max_instructions {
-        sfnt_max_instructions = ins_len;
-    }
-
-    font.max_storage = sfnt_max_storage;
-    font.max_stack_elements = sfnt_max_stack_elements;
-    font.max_twilight_points = sfnt_max_twilight_points;
-    font.max_instructions = sfnt_max_instructions;
+    font.final_maxp_data
+        .update_max_size_of_instructions(ins_len);
 
     glyph_ref.set_instructions(bytecode.as_slice());
     // Put the glyph back
@@ -2031,6 +2001,7 @@ fn build_glyph_scaler_bytecode(
 ///
 /// `first_indices` and `last_indices` contain active segments in traversal
 /// order (already filtered by segment map).
+#[allow(clippy::too_many_arguments)]
 fn build_glyph_segments_bytecode(
     recorder: &RustRecorder,
     font: &Font,
@@ -2212,6 +2183,7 @@ fn build_glyph_segments_bytecode(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_action_header(
     action: u32,
     edge1_first_idx: u16,
@@ -2491,7 +2463,7 @@ fn build_delta_exception_into(
     y_shift_value: i32,
     delta_args: &mut [Vec<u32>; 6],
 ) {
-    let mut ppem = ppem - CONTROL_DELTA_PPEM_MIN as i32;
+    let mut ppem = ppem - CONTROL_DELTA_PPEM_MIN;
 
     let mut offset = if ppem < 16 {
         0

@@ -98,10 +98,7 @@ fn build_number_set(number_set: &IntSet) -> (Bytecode, usize) {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn build_prep_table(
-    font: &mut Font,
-    glyf_data: &GlyfData,
-) -> Result<usize, AutohintError> {
+pub(crate) fn build_prep_table(font: &mut Font, glyf_data: &GlyfData) -> Result<(), AutohintError> {
     if font.get_processed(Tag::new(b"glyf")) {
         return Err(AutohintError::TableAlreadyProcessed);
     }
@@ -269,9 +266,10 @@ pub(crate) fn build_prep_table(
     }
     bytecode.extend(PREP_set_default_cvs_values);
 
-    let out: Vec<u8> = bytecode.as_slice().to_vec();
-    font.update_table(Tag::new(b"prep"), &out);
-    Ok(num_stack_elements.unwrap_or(0))
+    font.prep = bytecode.as_slice().to_vec();
+    font.final_maxp_data
+        .update_max_stack_elements(num_stack_elements.unwrap_or(0) as u16);
+    Ok(())
 }
 
 const PREP_hinting_limit_a: [u8; 3] = [

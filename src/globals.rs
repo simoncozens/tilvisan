@@ -10,7 +10,7 @@ use skrifa::{
         tables::glyf::{Anchor, CompositeGlyphFlags, Glyph},
         TableProvider,
     },
-    FontRef, GlyphId, MetadataProvider,
+    GlyphId, MetadataProvider,
 };
 
 /// Helper to convert a tag string to a 4-byte array, padding with spaces if needed.
@@ -143,12 +143,10 @@ pub(crate) fn compute_style_coverage(
         }
     }
 
-    let ttf_bytes = font.build_ttf();
-    let font = FontRef::new(&ttf_bytes)?;
-    let outlines = font.outline_glyphs();
+    let outlines = font.fontref.outline_glyphs();
     let styles = GlyphStyles::new(&outlines);
-    let glyf = font.glyf()?;
-    let loca = font.loca(None)?;
+    let glyf = font.fontref.glyf()?;
+    let loca = font.fontref.loca(None)?;
 
     let mut composite_children = vec![Vec::<usize>::new(); glyph_styles_out.len()];
     for gid in 0..glyph_styles_out.len() {

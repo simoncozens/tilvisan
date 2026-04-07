@@ -21,10 +21,7 @@ use skrifa::{
 use write_fonts::{
     dump_table,
     from_obj::ToOwnedTable,
-    tables::{
-        glyf::{Bbox, Contour, GlyfLocaBuilder, Glyph as WriteGlyph, SimpleGlyph},
-        head::Head,
-    },
+    tables::glyf::{Bbox, Contour, GlyfLocaBuilder, Glyph as WriteGlyph, SimpleGlyph},
 };
 
 /// Per-style CVT layout data for one Skrifa style.
@@ -45,8 +42,6 @@ pub struct StyleCvtData {
     /// array.  `0xFFFF` means no x-height blue zone.
     pub blue_adjustment_offset: u32,
 }
-
-type BuildGlyphInstructions = Option<fn(&mut Font, usize, GlyphId) -> Result<i32, AutohintError>>;
 
 fn fallback_style(font: &Font) -> u16 {
     crate::orchestrate::fallback_style_for_script(font.args.fallback_script) as u16
@@ -151,7 +146,7 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
         style_offsets: IndexMap::new(),
     };
 
-    let sfnt_max_components = font.max_components;
+    let sfnt_max_components = font.final_maxp_data.max_component_elements;
 
     let build_result = build_glyphs(font, use_scaler, font.args.composites, sfnt_max_components)?;
 
@@ -159,9 +154,9 @@ fn build_glyf_data_common(font: &mut Font, use_scaler: u8) -> Result<(), Autohin
     data.num_glyphs = build_result.num_glyphs;
 
     if font.args.composites && sfnt_max_components != 0 {
-        font.max_components += 1;
-        font.max_composite_points = build_result.max_composite_points;
-        font.max_composite_contours = build_result.max_composite_contours;
+        font.final_maxp_data.max_component_elements += 1;
+        font.final_maxp_data.max_composite_points = build_result.max_composite_points;
+        font.final_maxp_data.max_composite_contours = build_result.max_composite_contours;
     }
 
     if font.glyf_data.is_none() {
@@ -264,10 +259,8 @@ pub(crate) fn extract_unscaled_outline(
     font: &Font,
     glyph_id: GlyphId,
 ) -> Result<Option<OutlinePayload>, ReadError> {
-    let ttf_bytes = font.build_ttf();
-    let font = skrifa::FontRef::new(&ttf_bytes).map_err(|_| ReadError::ValidationError)?;
-    let outlines = font.outline_glyphs();
-    let upem = font.head()?.units_per_em() as f32;
+    let outlines = font.fontref.outline_glyphs();
+    let upem = font.fontref.head()?.units_per_em() as f32;
 
     let Some(outline) = outlines.get(glyph_id) else {
         return Ok(None);
@@ -490,13 +483,14 @@ fn compute_composite_pointsums(
 // ── split_glyphs (TA_sfnt_split_glyf_table Rust half) ───────────────────────
 
 fn split_glyphs(font: &mut Font) -> Result<Vec<ScaledGlyph>, AutohintError> {
-    let ttf_bytes = font.build_ttf();
-    let font = skrifa::FontRef::new(&ttf_bytes)?;
-    let glyf = font.glyf()?;
-    let maxp_table = font.maxp()?;
+    let glyf = font.fontref.glyf()?;
     let mut glyphs = vec![];
-    for gid in 0..(maxp_table.num_glyphs() as u32) {
-        let Some(raw_glyph) = font.loca(None)?.get_glyf(GlyphId::new(gid), &glyf)? else {
+    for gid in 0..(font.maxp.num_glyphs as u32) {
+        let Some(raw_glyph) = font
+            .fontref
+            .loca(None)?
+            .get_glyf(GlyphId::new(gid), &glyf)?
+        else {
             glyphs.push(ScaledGlyph::default());
             continue;
         };
@@ -509,11 +503,9 @@ fn split_glyphs(font: &mut Font) -> Result<Vec<ScaledGlyph>, AutohintError> {
 // ── run_font_through_scaler (TA_sfnt_create_glyf_data Rust half) ─────────────
 
 fn run_font_through_scaler(font: &mut Font) -> Result<Vec<ScaledGlyph>, AutohintError> {
-    let ttf_bytes = font.build_ttf();
-    let font = skrifa::FontRef::new(&ttf_bytes)?;
-    let head_table = font.head()?;
-    let maxp_table = font.maxp()?;
-    let outlines = font.outline_glyphs();
+    let head_table = font.fontref.head()?;
+    let maxp_table = font.fontref.maxp()?;
+    let outlines = font.fontref.outline_glyphs();
     let upem = head_table.units_per_em() as f32;
 
     let mut scaled_glyphs = Vec::new();
@@ -716,25 +708,8 @@ fn update_glyf_loca_tables(font: &mut Font) -> Result<(), AutohintError> {
             .map_err(|_| ReadError::ValidationError)?;
     }
     let (glyf_data, loca_data, loca_format) = builder.build();
-    font.update_table(
-        Tag::new(b"glyf"),
-        &dump_table(&glyf_data).map_err(|_| ReadError::ValidationError)?,
-    );
-    font.update_table(
-        Tag::new(b"loca"),
-        &dump_table(&loca_data).map_err(|_| ReadError::ValidationError)?,
-    );
-    font.set_processed(Tag::new(b"glyf"), true);
-    font.set_processed(Tag::new(b"loca"), true);
-    if let Some(head) = font.clone_table(Tag::new(b"head")) {
-        let read_head = write_fonts::read::tables::head::Head::read(FontData::new(&head))?;
-        let mut write_head: Head = read_head.to_owned_table();
-        write_head.index_to_loc_format = loca_format as i16;
-        font.update_table(
-            Tag::new(b"head"),
-            &dump_table(&write_head).map_err(|_| ReadError::ValidationError)?,
-        );
-    }
+    font.glyf_loca = Some((glyf_data, loca_data));
+    font.head.index_to_loc_format = loca_format as i16;
     Ok(())
 }
 
@@ -801,11 +776,8 @@ pub(crate) fn compute_hint_plan(
     is_digit: u8,
     ppem: u16,
 ) -> Result<ExportedHintPlan, AutohintError> {
-    let ttf_bytes = font.build_ttf();
-    let font = skrifa::FontRef::new(&ttf_bytes)?;
-
     let Some(plan) = compute_hint_plan_exported(
-        &font,
+        &font.fontref,
         &[],
         glyph_id.to_u32(),
         style_index,
@@ -872,7 +844,7 @@ pub(crate) fn build_glyf_table(font: &mut Font) -> Result<(), AutohintError> {
         .as_ref()
         .map(|d| d.num_glyphs)
         .ok_or(AutohintError::InvalidTable)?;
-    let sfnt_max_components = font.max_components;
+    let sfnt_max_components = font.final_maxp_data.max_component_elements;
 
     if font.get_processed(Tag::new(b"glyf")) {
         return Ok(());

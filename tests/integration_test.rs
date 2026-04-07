@@ -7,7 +7,7 @@ use std::{
 
 use libtest_mimic::{Arguments, Trial};
 use similar::TextDiff;
-use tilvisan::{ttfautohint, Args, InfoData, ScriptClassIndex, StemWidthModes};
+use tilvisan::{autohint, Args, ScriptClassIndex, StemWidthModes};
 
 fn main() {
     let args = Arguments::from_args();
@@ -31,8 +31,8 @@ fn main() {
             if output_file.exists() {
                 fs::remove_file(&output_file).unwrap();
             }
-            eprintln!("Running ttfautohint on file {file:?}");
-            run_ttfautohint(&file, &output_file);
+            eprintln!("Running autohint on file {file:?}");
+            run_autohint(&file, &output_file);
             let expected_file = Path::new("resources/test/hinted").join(file.file_name().unwrap());
             eprintln!("Comparing output {output_file:?} with expected {expected_file:?}");
             compare_with_expected(&output_dir, &output_file, &expected_file);
@@ -120,7 +120,7 @@ fn diff_ttx(expected_ttx: &Path, output_ttx: &Path) -> String {
     result
 }
 
-fn run_ttfautohint(input_file: &Path, output_file: &Path) {
+fn run_autohint(input_file: &Path, output_file: &Path) {
     let args = Args {
         input: input_file.to_string_lossy().into_owned(),
         output: output_file.to_string_lossy().into_owned(),
@@ -153,8 +153,8 @@ fn run_ttfautohint(input_file: &Path, output_file: &Path) {
         epoch: None,
     };
 
-    let output_bytes = ttfautohint(&args)
-        .unwrap_or_else(|e| panic!("ttfautohint failed on file {input_file:?}: {e}"));
+    let output_bytes =
+        autohint(&args).unwrap_or_else(|e| panic!("autohint failed on file {input_file:?}: {e}"));
 
     fs::write(output_file, output_bytes)
         .unwrap_or_else(|e| panic!("Failed to write output file {output_file:?}: {e}"));

@@ -67,7 +67,8 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
     };
 
     // Create and initialize Font
-    let mut font = Font::new(in_buf)?;
+    let fontref = skrifa::FontRef::new(&in_buf)?;
+    let mut font = Font::new(fontref)?;
     font.args = args.clone();
     font.progress = None;
     font.info_data = idata;
@@ -82,19 +83,15 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
     let hint_composites = font.args.composites;
     let fallback_style = fallback_style_for_script(font.args.fallback_script);
 
-    if font.has_ttfautohint_glyph()? {
+    if font.has_ttfautohint_glyph() {
         return Err(AutohintError::FontAlreadyProcessed);
     }
 
-    let glyph_count = crate::maxp::num_glyphs_in_font_binary(&font.in_buf)?;
-
-    font.glyph_count = glyph_count as i64;
-    font.glyph_styles = vec![crate::style::GlyphStyle::unassigned(); glyph_count as usize];
+    font.glyph_styles = vec![crate::style::GlyphStyle::unassigned(); font.glyph_count as usize];
 
     crate::control_index::control_build_tree(&mut font)?;
 
-    let has_legal_permission = crate::maxp::sfnt_has_legal_permission(&font)?;
-    if !has_legal_permission && !font.args.ignore_restrictions {
+    if !font.has_legal_permission()? && !font.args.ignore_restrictions {
         return Err(AutohintError::MissingLegalPermission);
     }
 
@@ -117,10 +114,8 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
         crate::control_index::control_apply_coverage(&mut font);
     }
 
-    crate::gasp::update_gasp(&mut font);
-
     if !dehint {
-        crate::cvt::build_cvt_table_store(&mut font)?;
+        crate::cvt::build_cvt_table(&mut font, &[])?;
 
         let glyf_data = font.glyf_data.take().ok_or(AutohintError::NullPointer)?;
 
@@ -128,28 +123,25 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
         let increase_x_height = font.args.increase_x_height;
         let has_index = font.control.has_index();
 
-        let fpgm_len = crate::fpgm::build_fpgm_table(
-            &mut font,
+        font.fpgm = crate::fpgm::build_fpgm(
             &glyf_data,
             increase_x_height,
             has_index,
             fallback_style as usize,
-        )?;
-        let sfnt_ref = &mut font;
-        if fpgm_len > sfnt_ref.max_instructions as usize {
-            sfnt_ref.max_instructions = fpgm_len as u16;
-        }
+        )?
+        .as_slice()
+        .to_vec();
+        font.final_maxp_data
+            .update_max_size_of_instructions(font.fpgm.len() as u16);
 
-        let prep_stack = build_prep_table(&mut font, &glyf_data)? as u16;
-        let sfnt_ref = &mut font;
-        if prep_stack > sfnt_ref.max_stack_elements {
-            sfnt_ref.max_stack_elements = prep_stack;
-        }
+        build_prep_table(&mut font, &glyf_data)?;
 
         font.glyf_data = Some(glyf_data);
     }
 
     crate::glyf::build_glyf_table(&mut font)?;
+
+    let has_components = font.final_maxp_data.max_component_elements != 0;
 
     if dehint {
         crate::maxp::update_maxp_table_dehint(&mut font)?
@@ -159,13 +151,13 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
             .as_ref()
             .ok_or(AutohintError::NullPointer)?
             .num_glyphs;
-        let adjust_composites = font.max_components != 0 && hint_composites;
+        let adjust_composites = has_components && hint_composites;
         crate::maxp::update_maxp_table_hinted(&mut font, adjust_composites, num_glyphs)?;
     }
 
-    if !dehint && font.max_components != 0 && !adjust_subglyphs && hint_composites {
+    if !dehint && has_components && !adjust_subglyphs && hint_composites {
         font.update_hmtx();
-        font.update_post();
+        font.update_post()?;
 
         crate::gpos::update_gpos(&mut font)?;
     }
@@ -174,7 +166,7 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
         crate::name::update_name_table(&mut font)?;
     }
 
-    Ok(font.build_ttf_complete(font.have_dsig))
+    font.build_ttf_complete()
 }
 
 pub(crate) fn parse_number_set_to_intset(input: &str, min: i32, max: i32) -> Option<IntSet> {
@@ -199,8 +191,8 @@ pub(crate) fn parse_number_set_to_intset(input: &str, min: i32, max: i32) -> Opt
 }
 
 pub(crate) fn fallback_style_for_script(script_index: crate::scripts::ScriptClassIndex) -> i32 {
-    crate::style_metadata::default_style_for_script(script_index.as_usize())
+    crate::style::default_style_for_script(script_index.as_usize())
         .map(|style| style as i32)
-        .or_else(|| crate::style_metadata::none_default_style().map(|style| style as i32))
+        .or_else(|| crate::style::none_default_style().map(|style| style as i32))
         .unwrap_or(0)
 }

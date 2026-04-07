@@ -1,9 +1,3 @@
-use skrifa::{
-    raw::{FontData, FontRead},
-    Tag,
-};
-use write_fonts::{dump_table, from_obj::ToOwnedTable, tables::name::Name};
-
 use crate::{
     font::Font,
     info::{process_name_post, process_name_record},
@@ -11,21 +5,9 @@ use crate::{
 };
 
 pub(crate) fn update_name_table(font: &mut Font) -> Result<(), AutohintError> {
-    if font.get_processed(Tag::new(b"name")) {
-        return Ok(());
-    }
-
-    let Some(table) = font.get_table(Tag::new(b"name")) else {
+    let Some(mut write_table) = font.name.take() else {
         return Ok(());
     };
-
-    let bytes = FontData::new(table);
-    let Ok(read_table) = write_fonts::read::tables::name::Name::read(bytes) else {
-        // Keep behavior compatible with the C mutator: invalid `name` is non-fatal.
-        return Ok(());
-    };
-
-    let mut write_table: Name = read_table.to_owned_table();
 
     // Build a Vec<u8> buffer for each name record.
     let mut record_bufs: Vec<Vec<u8>> = write_table
@@ -58,11 +40,6 @@ pub(crate) fn update_name_table(font: &mut Font) -> Result<(), AutohintError> {
     for (record, buf) in write_table.name_record.iter_mut().zip(record_bufs.iter()) {
         record.string = String::from_utf8_lossy(buf).into_owned().into();
     }
-
-    let Ok(out) = dump_table(&write_table) else {
-        return Ok(());
-    };
-
-    font.update_table(Tag::new(b"name"), &out);
+    font.name = Some(write_table);
     Ok(())
 }

@@ -17,14 +17,9 @@ fn f2dot14_to_f16dot16(v: skrifa::raw::types::F2Dot14) -> i32 {
     (v.to_bits() as i32) << 2
 }
 
-fn glyph_totals(
-    font: &skrifa::FontRef<'_>,
-    glyph_id: GlyphId,
-) -> Result<(u32, i32), LoaderStatus> {
+fn glyph_totals(font: &skrifa::FontRef<'_>, glyph_id: GlyphId) -> Result<(u32, i32), LoaderStatus> {
     let glyf = font.glyf().map_err(|_| LoaderStatus::InvalidArgument)?;
-    let loca = font
-        .loca(None)
-        .map_err(|_| LoaderStatus::InvalidArgument)?;
+    let loca = font.loca(None).map_err(|_| LoaderStatus::InvalidArgument)?;
 
     let mut stack = vec![glyph_id];
     let mut num_points: u32 = 0;
@@ -84,12 +79,12 @@ pub struct LoaderGlyphInfo {
 
 impl LoaderGlyphInfo {
     pub fn new(font: &Font, glyph_id: GlyphId) -> Result<Self, LoaderStatus> {
-        let ttf_bytes = font.build_ttf();
-        let Ok(font) = skrifa::FontRef::new(&ttf_bytes) else {
-            return Err(LoaderStatus::InvalidArgument);
-        };
-        let glyf = font.glyf().map_err(|_| LoaderStatus::InvalidArgument)?;
+        let glyf = font
+            .fontref
+            .glyf()
+            .map_err(|_| LoaderStatus::InvalidArgument)?;
         let loca = font
+            .fontref
             .loca(None)
             .map_err(|_| LoaderStatus::InvalidArgument)?;
         let glyph = loca
@@ -112,7 +107,7 @@ impl LoaderGlyphInfo {
             }),
             Some(Glyph::Composite(g)) => Ok(Self {
                 kind: LoaderGlyphKind::Composite as u32,
-                num_points: glyph_totals(&font, glyph_id)
+                num_points: glyph_totals(&font.fontref, glyph_id)
                     .ok()
                     .and_then(|(points, _)| u16::try_from(points).ok())
                     .unwrap_or(u16::MAX),
@@ -169,9 +164,7 @@ fn load_components_vec(
     glyph_id: GlyphId,
 ) -> Result<Vec<LoaderComponent>, LoaderStatus> {
     let glyf = font.glyf().map_err(|_| LoaderStatus::InvalidArgument)?;
-    let loca = font
-        .loca(None)
-        .map_err(|_| LoaderStatus::InvalidArgument)?;
+    let loca = font.loca(None).map_err(|_| LoaderStatus::InvalidArgument)?;
     let glyph = loca
         .get_glyf(glyph_id, &glyf)
         .map_err(|_| LoaderStatus::InvalidArgument)?;
@@ -189,19 +182,16 @@ pub(crate) fn build_subglyph_shifter_bytecode(
     font: &Font,
     glyph_id: GlyphId,
 ) -> Result<Bytecode, LoaderStatus> {
-    let ttf_bytes = font.build_ttf();
-    let Ok(font) = skrifa::FontRef::new(&ttf_bytes) else {
-        return Err(LoaderStatus::InvalidArgument);
-    };
+    let font = &font.fontref;
 
-    let components = load_components_vec(&font, glyph_id)?;
+    let components = load_components_vec(font, glyph_id)?;
     let mut bytecode = Bytecode::new();
     let mut curr_contour: i32 = 0;
 
     for component in components {
         let flags = component.flags;
         let y_offset = component.arg2 as i32;
-        let num_contours = glyph_totals(&font, component.glyph_id)?.1;
+        let num_contours = glyph_totals(font, component.glyph_id)?.1;
 
         if (flags & FT_SUBGLYPH_FLAG_ARGS_ARE_XY_VALUES) == 0 || y_offset == 0 || num_contours == 0
         {

@@ -1,4 +1,4 @@
-use skrifa::outline::STYLE_CLASSES;
+use skrifa::outline::{SCRIPT_CLASSES, STYLE_CLASSES};
 
 use crate::AutohintError;
 
@@ -90,4 +90,33 @@ impl GlyphStyle {
             is_non_base,
         }
     }
+}
+
+/// Return the default Skrifa style for a script index.
+///
+/// Returns `None` if no default style exists for the given script index.
+pub(crate) fn default_style_for_script(script_index: usize) -> Option<usize> {
+    let script = SCRIPT_CLASSES.get(script_index)?;
+
+    for (style_index, style) in STYLE_CLASSES.iter().enumerate() {
+        if style.feature.is_some() {
+            continue;
+        }
+
+        if style.script.tag != script.tag {
+            continue;
+        }
+
+        return Some(style_index);
+    }
+
+    None
+}
+
+pub(crate) fn none_default_style() -> Option<usize> {
+    STYLE_CLASSES
+        .iter()
+        .enumerate()
+        .find(|(_, style)| style.name == "NONE_DFLT")
+        .map(|(idx, _)| idx)
 }

@@ -7,7 +7,6 @@ mod error;
 pub mod features;
 mod font;
 mod fpgm;
-mod gasp;
 mod globals;
 mod glyf;
 mod gpos;
@@ -23,7 +22,6 @@ mod prep;
 mod recorder;
 mod scripts;
 mod style;
-mod style_metadata;
 
 pub use args::Args;
 pub use error::AutohintError;
