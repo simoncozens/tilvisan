@@ -152,6 +152,17 @@ impl Bytecode {
             return false;
         }
 
+        let is_push_opcode = |opcode: u8| {
+            opcode == NPUSHB
+                || opcode == NPUSHW
+                || (PUSHB_1..=PUSHB_8).contains(&opcode)
+                || (PUSHW_1..=PUSHW_8).contains(&opcode)
+        };
+
+        if pos.iter().any(|&p| !is_push_opcode(self.0[p])) {
+            return false;
+        }
+
         // Skip NPUSHW — handling not implemented for this path
         if self.0[pos[0]] == NPUSHW || self.0[pos[1]] == NPUSHW || self.0[pos[2]] == NPUSHW {
             return false;
@@ -167,6 +178,13 @@ impl Bytecode {
         let size0 = self.0[pos[0] + 1] as usize;
         let size1 = self.0[p1 + 1] as usize;
         let size2 = p2.map(|p| self.0[p + 1] as usize).unwrap_or(0);
+
+        let d0_end = pos[0] + 2 + size0;
+        let d1_end = p1 + 2 + size1;
+        let d2_end = p2.map(|p| p + 2 + size2).unwrap_or(0);
+        if d0_end > self.0.len() || d1_end > self.0.len() || p2.is_some_and(|_| d2_end > self.0.len()) {
+            return false;
+        }
 
         let sum = size0 + size1 + size2;
         if sum == 0 {
@@ -186,10 +204,10 @@ impl Bytecode {
         };
 
         // Collect payload bytes from each block, skipping the NPUSHB opcode+count headers
-        let d0 = self.0[pos[0] + 2..pos[0] + 2 + size0].to_vec();
-        let d1 = self.0[p1 + 2..p1 + 2 + size1].to_vec();
+        let d0 = self.0[pos[0] + 2..d0_end].to_vec();
+        let d1 = self.0[p1 + 2..d1_end].to_vec();
         let d2 = if let Some(p) = p2 {
-            self.0[p + 2..p + 2 + size2].to_vec()
+            self.0[p + 2..d2_end].to_vec()
         } else {
             Vec::new()
         };

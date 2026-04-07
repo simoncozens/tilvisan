@@ -1734,8 +1734,8 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
                 font.final_maxp_data
                     .update_max_stack_elements(num_stack_elements);
 
-                if action_hints_records.len() == 1 && !bytecode.optimize_push([pos0, pos1, pos2]) {
-                    bytecode.truncate(pos0);
+                if action_hints_records.len() == 1 && point_hints_records.len() <= 1 {
+                    let _ = bytecode.optimize_push([pos0, pos1, pos2]);
                 }
             }
         }
@@ -1874,8 +1874,8 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
             font.final_maxp_data
                 .update_max_stack_elements(num_stack_elements);
 
-            if action_hints_records.len() == 1 && !bytecode.optimize_push([pos0, pos1, pos2]) {
-                bytecode.truncate(pos0);
+            if action_hints_records.len() == 1 && point_hints_records.len() <= 1 {
+                let _ = bytecode.optimize_push([pos0, pos1, pos2]);
             }
         }
     }
