@@ -10,6 +10,7 @@ use skrifa::{
     outline::{compute_unscaled_style_metrics_exported, STYLE_CLASSES},
     GlyphId,
 };
+use write_fonts::types::F2Dot14;
 
 // From tabytecode.h: CVT runtime section size
 const CVTL_MAX_RUNTIME: u32 = 7;
@@ -28,6 +29,7 @@ fn compute_style_metrics(
     font: &mut Font,
     style_index: usize,
     sample_glyph: GlyphId,
+    coords: &[F2Dot14],
 ) -> Result<StyleMetrics, AutohintError> {
     if sample_glyph.to_u32() == 0 {
         return Err(AutohintError::MissingStyleSampleGlyph);
@@ -37,7 +39,7 @@ fn compute_style_metrics(
         return Err(AutohintError::InvalidTable);
     };
 
-    let metrics = compute_unscaled_style_metrics_exported(&font.fontref, &[], style_class);
+    let metrics = compute_unscaled_style_metrics_exported(&font.fontref, coords, style_class);
 
     let mut hwidths = Vec::with_capacity(metrics.horizontal_widths.len());
     for &w in &metrics.horizontal_widths {
@@ -239,7 +241,7 @@ fn build_cvt_blob(
     })
 }
 
-pub(crate) fn build_cvt_table(font: &mut Font) -> Result<(), AutohintError> {
+pub(crate) fn build_cvt_table(font: &mut Font, coords: &[F2Dot14]) -> Result<(), AutohintError> {
     // Clone sample_glyphs to release the borrow before mutable access
     let sample_glyphs = font.sample_glyphs.clone();
     let fallback_style = crate::orchestrate::fallback_style_for_script(font.args.fallback_script);
@@ -252,7 +254,7 @@ pub(crate) fn build_cvt_table(font: &mut Font) -> Result<(), AutohintError> {
             .get(&style_key)
             .copied()
             .unwrap_or_else(|| GlyphId::new(0));
-        match compute_style_metrics(font, style_idx, glyph_id) {
+        match compute_style_metrics(font, style_idx, glyph_id, coords) {
             Ok(metrics) => {
                 if metrics.blue_refs.is_empty() {
                     font.sample_glyphs.shift_remove(&style_key);
@@ -273,7 +275,7 @@ pub(crate) fn build_cvt_table(font: &mut Font) -> Result<(), AutohintError> {
     let blob_data = build_cvt_blob(
         &style_metrics,
         font.args.windows_compatibility,
-        units_per_em as u16,
+        units_per_em,
     )?;
 
     if blob_data.style_offsets.is_empty() && !font.args.symbol {
