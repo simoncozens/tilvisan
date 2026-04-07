@@ -2,7 +2,10 @@ use indexmap::IndexMap;
 use skrifa::{raw::TableProvider, FontRef, GlyphId, GlyphNames, Tag};
 use write_fonts::{
     from_obj::ToOwnedTable as _,
-    tables::{glyf::Glyf, gpos::Gpos, head::Head, loca::Loca, maxp::Maxp, name::Name, post::Post},
+    tables::{
+        cvar::Cvar, glyf::Glyf, gpos::Gpos, head::Head, loca::Loca, maxp::Maxp, name::Name,
+        post::Post,
+    },
     types::Version16Dot16,
 };
 
@@ -83,6 +86,7 @@ pub(crate) struct Font<'a> {
     pub(crate) head: Head,
     pub(crate) post: Post,
     pub(crate) maxp: Maxp,
+    pub(crate) cvar: Option<Cvar>,
     pub(crate) cvt: Vec<u8>,
     pub(crate) hmtx: Vec<u8>,
     pub(crate) prep: Vec<u8>,
@@ -128,6 +132,7 @@ impl<'a> Font<'a> {
             gpos,
             post,
             head,
+            cvar: None,
             glyf_loca: None,
             maxp: maxp.to_owned_table(),
             cvt: vec![],
@@ -148,6 +153,9 @@ impl<'a> Font<'a> {
         self.fontref.table_data(tag).is_some()
     }
 
+    pub(crate) fn is_variable(&self) -> bool {
+        self.fontref.fvar().is_ok()
+    }
     pub(crate) fn get_processed(&self, tag: Tag) -> bool {
         self.processed.contains(&tag)
     }
@@ -183,6 +191,9 @@ impl<'a> Font<'a> {
         }
         if let Some(name) = &self.name {
             new_font.add_table(name)?;
+        }
+        if let Some(cvar) = &self.cvar {
+            new_font.add_table(cvar)?;
         }
         new_font.copy_missing_tables(self.fontref.clone());
         Ok(new_font.build())

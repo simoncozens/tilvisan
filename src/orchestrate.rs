@@ -116,6 +116,9 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
 
     if !dehint {
         crate::cvt::build_cvt_table(&mut font, &[])?;
+        if font.is_variable() {
+            crate::cvt::build_cvar_table(&mut font)?;
+        }
 
         let glyf_data = font.glyf_data.take().ok_or(AutohintError::NullPointer)?;
 

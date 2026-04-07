@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::{
     bytecode::Bytecode,
     font::Font,
@@ -8,9 +10,16 @@ use crate::{
 use indexmap::IndexMap;
 use skrifa::{
     outline::{compute_unscaled_style_metrics_exported, STYLE_CLASSES},
+    raw::TableProvider,
     GlyphId,
 };
-use write_fonts::types::F2Dot14;
+use write_fonts::{
+    tables::{
+        cvar::{Cvar, CvtDeltas},
+        gvar::Tent,
+    },
+    types::F2Dot14,
+};
 
 // From tabytecode.h: CVT runtime section size
 const CVTL_MAX_RUNTIME: u32 = 7;
@@ -270,12 +279,10 @@ pub(crate) fn build_cvt_table(font: &mut Font, coords: &[F2Dot14]) -> Result<(),
         }
     }
 
-    let units_per_em = font.head.units_per_em;
-
     let blob_data = build_cvt_blob(
         &style_metrics,
         font.args.windows_compatibility,
-        units_per_em,
+        font.head.units_per_em,
     )?;
 
     if blob_data.style_offsets.is_empty() && !font.args.symbol {
@@ -287,4 +294,98 @@ pub(crate) fn build_cvt_table(font: &mut Font, coords: &[F2Dot14]) -> Result<(),
 
     font.cvt = blob_data.bytecode.as_slice().to_vec();
     Ok(())
+}
+
+pub(crate) fn build_cvar_table(font: &mut Font) -> Result<(), AutohintError> {
+    // Find all interesting locations.
+    let locations: HashSet<Vec<F2Dot14>> = font
+        .sample_glyphs
+        .values()
+        .flat_map(|g| glyph_variations(font, *g))
+        .flatten()
+        .collect();
+    // cvt values are 16 bit FWORD types, so we need to
+    // a) decompose the bytecode into 16-bit words, and
+    // b) convert them to i32 for easier delta application
+    let default: Vec<i32> = font
+        .cvt
+        .chunks_exact(2)
+        .map(|b| i16::from_be_bytes([b[0], b[1]]) as i32)
+        .collect();
+    // Build a blob for each location
+    let mut deltas: HashMap<Vec<F2Dot14>, Vec<i32>> = HashMap::default();
+    for location in locations {
+        let mut style_metrics = vec![];
+
+        for style_idx in 0..STYLE_SLOTS {
+            let style_key = StyleIndex::new(style_idx)?;
+            let glyph_id = font
+                .sample_glyphs
+                .get(&style_key)
+                .copied()
+                .unwrap_or_else(|| GlyphId::new(0));
+            match compute_style_metrics(font, style_idx, glyph_id, &location) {
+                Ok(metrics) => {
+                    style_metrics.push(metrics);
+                }
+                Err(AutohintError::MissingStyleSampleGlyph) => {
+                    style_metrics.push(StyleMetrics::default());
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        let blob_data = build_cvt_blob(
+            &style_metrics,
+            font.args.windows_compatibility,
+            font.head.units_per_em,
+        )?;
+        let blob_words: Vec<i32> = blob_data
+            .bytecode
+            .as_slice()
+            .chunks_exact(2)
+            .map(|b| i16::from_be_bytes([b[0], b[1]]) as i32)
+            .collect();
+        let delta: Vec<i32> = blob_words
+            .iter()
+            .zip(default.iter())
+            .map(|(b, d)| b.saturating_sub(*d))
+            .collect();
+        deltas.insert(location, delta);
+    }
+    // Build a tuple variations store for the blobs
+    let cvar = Cvar::new(
+        deltas
+            .iter()
+            .map(|(location, delta)| CvtDeltas::new(peaks(location.clone()), delta.clone()))
+            .collect(),
+        font.fontref.fvar()?.axis_count(),
+    )
+    .map_err(|e| AutohintError::InvalidArgument(e.to_string()))?;
+    font.cvar = Some(cvar);
+    Ok(())
+}
+
+fn glyph_variations(font: &Font, gid: GlyphId) -> Result<Vec<Vec<F2Dot14>>, AutohintError> {
+    let Some(gvd) = font.fontref.gvar()?.glyph_variation_data(gid)? else {
+        return Ok(vec![]);
+    };
+    Ok(gvd
+        .tuples()
+        .map(|t| {
+            t.peak()
+                .values
+                .iter()
+                .map(|x| x.get())
+                .collect::<Vec<F2Dot14>>()
+        })
+        .collect())
+}
+
+fn peaks(peaks: Vec<F2Dot14>) -> Vec<Tent> {
+    peaks
+        .into_iter()
+        .map(|peak| Tent::new(peak, None))
+        .collect()
 }
