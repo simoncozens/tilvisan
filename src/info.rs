@@ -132,6 +132,7 @@ fn finalize_info_string(idata: &mut InfoData, d: String) {
 /// Modifies `data` in place for version strings (name_id 5).
 /// For family-name IDs (1, 4, 6, 16, 21), stores `record_idx` so that
 /// `process_name_post` can append a suffix after all records are visited.
+#[allow(clippy::too_many_arguments)]
 pub fn process_name_record(
     platform_id: u16,
     encoding_id: u16,

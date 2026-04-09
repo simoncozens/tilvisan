@@ -39,6 +39,7 @@ pub(crate) struct DeltaRule {
     pub(crate) ppem: i32,
     pub(crate) x_shift: i32,
     pub(crate) y_shift: i32,
+    #[allow(dead_code)]
     pub(crate) line_number: i32,
 }
 

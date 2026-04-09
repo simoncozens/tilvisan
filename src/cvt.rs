@@ -15,9 +15,7 @@ use skrifa::{
     GlyphId,
 };
 use write_fonts::{
-    tables::{
-        cvar::{Cvar, CvtDeltas},
-    },
+    tables::cvar::{Cvar, CvtDeltas},
     types::F2Dot14,
 };
 
@@ -366,4 +364,3 @@ pub(crate) fn build_cvar_table(font: &mut Font) -> Result<(), AutohintError> {
     font.cvar = Some(cvar);
     Ok(())
 }
-

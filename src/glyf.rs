@@ -50,6 +50,7 @@ fn fallback_style(font: &Font) -> u16 {
 
 #[derive(Copy, Clone, Default)]
 pub struct OutlinePoint {
+    #[allow(dead_code)]
     pub x: i32,
     pub y: i32,
 }

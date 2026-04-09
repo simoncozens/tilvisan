@@ -149,6 +149,7 @@ pub(crate) fn compute_style_coverage(
     let loca = font.fontref.loca(None)?;
 
     let mut composite_children = vec![Vec::<usize>::new(); glyph_styles_out.len()];
+    #[allow(clippy::needless_range_loop)]
     for gid in 0..glyph_styles_out.len() {
         let Some(glyph) = loca.get_glyf(GlyphId::new(gid as u32), &glyf)? else {
             continue;

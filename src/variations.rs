@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
-use skrifa::raw::TableProvider;
-use skrifa::{outline::ExportedHintPlan, GlyphId};
+use skrifa::{outline::ExportedHintPlan, raw::TableProvider, GlyphId};
 use write_fonts::{tables::gvar::Tent, types::F2Dot14};
 
 use crate::{font::Font, style::StyleIndex, AutohintError};
@@ -68,7 +67,8 @@ impl HintPlanDivergenceMetrics {
     }
 
     fn critical_opcode_risk(self) -> usize {
-        self.point_on_between_mismatch_with_round_flip.saturating_mul(3)
+        self.point_on_between_mismatch_with_round_flip
+            .saturating_mul(3)
             + self.opcode_mismatch_with_round_flip
             + self.opcode_mismatch_point_arity_change.saturating_sub(1)
     }
@@ -116,7 +116,13 @@ fn hint_plan_signature(plan: &ExportedHintPlan) -> HintPlanSignature {
     let mut segment_order: Vec<usize> = (0..plan.segments.len()).collect();
     segment_order.sort_by_key(|&idx| {
         let seg = &plan.segments[idx];
-        (seg.first_ix, seg.last_ix, seg.edge_ix, seg.edge_next_ix, idx)
+        (
+            seg.first_ix,
+            seg.last_ix,
+            seg.edge_ix,
+            seg.edge_next_ix,
+            idx,
+        )
     });
 
     let mut segment_map = vec![0xFFFF; plan.segments.len()];

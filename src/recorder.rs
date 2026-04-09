@@ -2441,6 +2441,7 @@ fn emit_segments_payload(
     Ok(buf)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_marshaled_action_bytes(
     action: u32,
     edge1_first_idx: u16,
