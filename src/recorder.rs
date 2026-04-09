@@ -8,7 +8,7 @@ use crate::{
     control_index::ControlIndex,
     font::Font,
     glyf::{extract_unscaled_outline, ScaledGlyph},
-    loader::build_subglyph_shifter_bytecode,
+    loader::{build_subglyph_shifter_bytecode, LoaderGlyphInfo, LoaderGlyphKind},
     opcodes::*,
     variations::has_stable_hint_plan_across_variations,
     AutohintError,
@@ -1566,9 +1566,9 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
     let mut is_empty_glyph = !is_composite_glyph && glyph_ref.num_contours() == 0;
     let mut glyph_num_points = glyph_ref.num_points() as u32;
 
-    if let Ok(info) = crate::loader::load_glyph_info(font, idx) {
-        is_composite_glyph = info.kind == 2;
-        is_empty_glyph = info.kind == 0;
+    if let Ok(info) = LoaderGlyphInfo::new(font, idx) {
+        is_composite_glyph = info.kind == LoaderGlyphKind::Composite;
+        is_empty_glyph = info.kind == LoaderGlyphKind::Empty;
         glyph_num_points = info.num_points as u32;
     }
 

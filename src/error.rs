@@ -54,4 +54,6 @@ pub enum AutohintError {
     MissingLegalPermission,
     #[error("Font has already been processed")]
     FontAlreadyProcessed,
+    #[error("Composite glyphs nested too deeply")]
+    CompositeTooDeeplyNested,
 }
