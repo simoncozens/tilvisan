@@ -13,12 +13,11 @@ use crate::{
     args::Args, control_index::ControlState, glyf::GlyfData, style::StyleIndex, AutohintError,
     InfoData,
 };
-use core::ffi::{c_int, c_long, c_uint};
 use std::collections::HashSet;
 
-pub(crate) const TA_PROP_INCREASE_X_HEIGHT_MIN: c_int = 6;
+pub(crate) const TA_PROP_INCREASE_X_HEIGHT_MIN: i32 = 6;
 
-pub(crate) type TaProgressFunc = Option<fn(GlyphId, GlyphId, c_long, usize) -> c_int>;
+pub(crate) type TaProgressFunc = Option<fn(GlyphId, GlyphId, i64, usize) -> i32>;
 
 #[derive(Default)]
 pub(crate) struct FinalMaxpData {
@@ -70,10 +69,10 @@ pub(crate) struct Font<'a> {
     pub(crate) fontref: FontRef<'a>,
     pub(crate) reference_buf: Option<Vec<u8>>,
 
-    pub(crate) glyph_count: c_long,
+    pub(crate) glyph_count: i64,
     pub(crate) glyph_styles: Vec<crate::style::GlyphStyle>,
     pub(crate) sample_glyphs: IndexMap<StyleIndex, GlyphId>,
-    pub(crate) increase_x_height: c_uint,
+    pub(crate) increase_x_height: u32,
     pub(crate) glyf_data: Option<GlyfData>,
     pub(crate) final_maxp_data: FinalMaxpData,
 

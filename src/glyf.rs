@@ -1,4 +1,3 @@
-use core::ffi::c_long;
 use std::fmt::Write;
 
 extern crate libc;
@@ -863,7 +862,7 @@ pub(crate) fn build_glyf_table(font: &mut Font) -> Result<(), AutohintError> {
             build_glyph_instructions(font, GlyphId::new(idx))?;
 
             if let Some(progress) = font.progress {
-                let ret = progress(GlyphId::new(idx), GlyphId::new(loop_count), 0 as c_long, 1);
+                let ret = progress(GlyphId::new(idx), GlyphId::new(loop_count), 0, 1);
                 if ret != 0 {
                     return Err(AutohintError::ProgressCancelled);
                 }
