@@ -6,6 +6,7 @@ use crate::{
     bytecode::Bytecode,
     control::CONTROL_DELTA_PPEM_MIN,
     control_index::ControlIndex,
+    cvt::glyph_variations,
     font::Font,
     glyf::{extract_unscaled_outline, ScaledGlyph},
     loader::build_subglyph_shifter_bytecode,
@@ -13,6 +14,7 @@ use crate::{
     AutohintError,
 };
 use skrifa::outline::{ExportedHintPlan, ExportedHintRecord};
+use write_fonts::types::F2Dot14;
 
 use crate::style::{StyleIndex, STYLE_COUNT};
 
@@ -1180,6 +1182,7 @@ fn recorder_record_hints_for_ppem(
     ta_style: StyleIndex,
     is_non_base: bool,
     is_digit: bool,
+    coords: &[F2Dot14],
 ) -> Result<(), AutohintError> {
     // Reset the hints-record accumulator for this ppem
     {
@@ -1195,6 +1198,7 @@ fn recorder_record_hints_for_ppem(
         is_non_base as u8,
         is_digit as u8,
         ppem,
+        coords,
     )?;
 
     if !recorder_build_replay_axis_from_plan(recorder, &rust_plan) {
@@ -1235,6 +1239,90 @@ fn recorder_record_hints_for_ppem(
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HintPlanSignature {
+    segments: Vec<(u16, u16, u16, u16)>,
+    edges: Vec<(u16, u16, u16, u8, bool)>,
+    records: Vec<(u32, u16, u16, u16)>,
+}
+
+fn hint_plan_signature(plan: &ExportedHintPlan) -> HintPlanSignature {
+    let segments = plan
+        .segments
+        .iter()
+        .map(|seg| (seg.first_ix, seg.last_ix, seg.edge_ix, seg.edge_next_ix))
+        .collect();
+
+    let edges = plan
+        .edges
+        .iter()
+        .map(|edge| {
+            (
+                edge.first_ix,
+                edge.serif_ix,
+                edge.blue_ix,
+                edge.flags,
+                edge.blue_is_shoot != 0,
+            )
+        })
+        .collect();
+
+    let records = plan
+        .records
+        .iter()
+        .map(|rec| (rec.action as u32, rec.edge_ix, rec.edge2_ix, rec.edge3_ix))
+        .collect();
+
+    HintPlanSignature {
+        segments,
+        edges,
+        records,
+    }
+}
+
+fn has_stable_hint_plan_across_variations(
+    font: &Font,
+    glyph_idx: GlyphId,
+    ta_style: StyleIndex,
+    is_non_base: bool,
+    is_digit: bool,
+) -> Result<bool, AutohintError> {
+    let locations = glyph_variations(font, glyph_idx)?;
+    if locations.is_empty() {
+        return Ok(true);
+    }
+
+    for size in font.args.hinting_range_min..=font.args.hinting_range_max {
+        let default_plan = crate::glyf::compute_hint_plan(
+            font,
+            glyph_idx,
+            ta_style.as_usize(),
+            is_non_base as u8,
+            is_digit as u8,
+            size as u16,
+            &[],
+        )?;
+        let default_sig = hint_plan_signature(&default_plan);
+
+        for coords in &locations {
+            let var_plan = crate::glyf::compute_hint_plan(
+                font,
+                glyph_idx,
+                ta_style.as_usize(),
+                is_non_base as u8,
+                is_digit as u8,
+                size as u16,
+                coords,
+            )?;
+            if hint_plan_signature(&var_plan) != default_sig {
+                return Ok(false);
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 fn recorder_build_replay_axis_from_plan(
@@ -1572,6 +1660,25 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
         return Ok(());
     }
 
+    let unstable_variable_plan = if font.is_variable() && !is_composite_glyph {
+        !has_stable_hint_plan_across_variations(
+            font,
+            idx,
+            ta_style,
+            gstyle.is_non_base,
+            gstyle.is_digit,
+        )?
+    } else {
+        false
+    };
+
+    if unstable_variable_plan {
+        log::info!(
+            "glyph {} has divergent variable hint plans across designspace samples; using fallback scaling",
+            font.glyph_name(idx)
+        );
+    }
+
     let mut bytecode = Bytecode::new();
 
     if is_composite_glyph {
@@ -1581,8 +1688,8 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
         };
         bytecode.extend(subglyph);
         use_gstyle_data = false;
-    } else if font.args.fallback_scaling {
-        if ta_style.as_usize() == fallback_style {
+    } else if font.args.fallback_scaling || unstable_variable_plan {
+        if ta_style.as_usize() == fallback_style || unstable_variable_plan {
             let recorder = RustRecorder::new(&glyph_ref);
             let (emitted, num_args) =
                 build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
@@ -1617,6 +1724,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
                     ta_style,
                     gstyle.is_non_base,
                     gstyle.is_digit,
+                    &[],
                 )?;
 
                 if action_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
@@ -1760,6 +1868,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
                 ta_style,
                 gstyle.is_non_base,
                 gstyle.is_digit,
+                &[],
             )?;
 
             if action_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {

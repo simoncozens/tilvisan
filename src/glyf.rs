@@ -22,6 +22,7 @@ use write_fonts::{
     dump_table,
     from_obj::ToOwnedTable,
     tables::glyf::{Bbox, Contour, GlyfLocaBuilder, Glyph as WriteGlyph, SimpleGlyph},
+    types::F2Dot14,
 };
 
 /// Per-style CVT layout data for one Skrifa style.
@@ -775,10 +776,11 @@ pub(crate) fn compute_hint_plan(
     is_non_base: u8,
     is_digit: u8,
     ppem: u16,
+    coords: &[F2Dot14],
 ) -> Result<ExportedHintPlan, AutohintError> {
     let Some(plan) = compute_hint_plan_exported(
         &font.fontref,
-        &[],
+        coords,
         glyph_id.to_u32(),
         style_index,
         is_non_base != 0,
