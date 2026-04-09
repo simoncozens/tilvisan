@@ -22,6 +22,7 @@ mod prep;
 mod recorder;
 mod scripts;
 mod style;
+mod variations;
 
 pub use args::Args;
 pub use error::AutohintError;

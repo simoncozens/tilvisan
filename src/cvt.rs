@@ -5,6 +5,7 @@ use crate::{
     font::Font,
     glyf::StyleCvtData,
     style::{StyleIndex, STYLE_COUNT},
+    variations::{glyph_variations, peaks},
     AutohintError,
 };
 use indexmap::IndexMap;
@@ -16,7 +17,6 @@ use skrifa::{
 use write_fonts::{
     tables::{
         cvar::{Cvar, CvtDeltas},
-        gvar::Tent,
     },
     types::F2Dot14,
 };
@@ -367,28 +367,3 @@ pub(crate) fn build_cvar_table(font: &mut Font) -> Result<(), AutohintError> {
     Ok(())
 }
 
-pub(crate) fn glyph_variations(
-    font: &Font,
-    gid: GlyphId,
-) -> Result<Vec<Vec<F2Dot14>>, AutohintError> {
-    let Some(gvd) = font.fontref.gvar()?.glyph_variation_data(gid)? else {
-        return Ok(vec![]);
-    };
-    Ok(gvd
-        .tuples()
-        .map(|t| {
-            t.peak()
-                .values
-                .iter()
-                .map(|x| x.get())
-                .collect::<Vec<F2Dot14>>()
-        })
-        .collect())
-}
-
-fn peaks(peaks: Vec<F2Dot14>) -> Vec<Tent> {
-    peaks
-        .into_iter()
-        .map(|peak| Tent::new(peak, None))
-        .collect()
-}

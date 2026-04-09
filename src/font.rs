@@ -239,6 +239,13 @@ impl<'a> Font<'a> {
             .any(|(_, name)| name.as_str() == ".ttfautohint")
     }
 
+    pub(crate) fn glyph_name(&self, gid: GlyphId) -> String {
+        GlyphNames::new(&self.fontref)
+            .get(gid)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("gid{}", gid.to_u32()))
+    }
+
     pub(crate) fn has_legal_permission(&self) -> Result<bool, AutohintError> {
         Ok(self.fontref.os2()?.fs_type() & 0x02 == 0)
     }
