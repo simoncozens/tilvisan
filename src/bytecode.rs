@@ -113,6 +113,7 @@ impl Bytecode {
         self.0.extend_from_slice(bytes);
     }
 
+    #[allow(dead_code)]
     pub fn truncate(&mut self, len: usize) {
         self.0.truncate(len);
     }
@@ -124,10 +125,12 @@ impl Bytecode {
         self.0.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn push_words(&mut self, args: &[u32], optimize: bool) -> Result<(), &'static str> {
         self.push(args, true, optimize)
     }
 
+    #[allow(dead_code)]
     pub fn push_bytes_args(&mut self, args: &[u32], optimize: bool) -> Result<(), &'static str> {
         self.push(args, false, optimize)
     }
