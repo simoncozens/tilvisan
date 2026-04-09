@@ -100,9 +100,7 @@ struct RustRecorder<'a> {
     replay_first_indices: Vec<u16>,
     replay_last_indices: Vec<u16>,
     replay_axis_num_segments: u16,
-    replay_axis_max_segments: u16,
     replay_axis_num_edges: u16,
-    replay_axis_max_edges: u16,
     replay_axis_major_dir: i32,
     replay_segment_edge_raw: Vec<u16>,
     replay_edge_first_raw: Vec<u16>,
@@ -134,9 +132,7 @@ impl<'a> RustRecorder<'a> {
             replay_first_indices: Vec::new(),
             replay_last_indices: Vec::new(),
             replay_axis_num_segments: 0,
-            replay_axis_max_segments: 0,
             replay_axis_num_edges: 0,
-            replay_axis_max_edges: 0,
             replay_axis_major_dir: 0,
             replay_segment_edge_raw: Vec::new(),
             replay_edge_first_raw: Vec::new(),
@@ -164,9 +160,7 @@ impl<'a> RustRecorder<'a> {
         self.replay_first_indices.clear();
         self.replay_last_indices.clear();
         self.replay_axis_num_segments = 0;
-        self.replay_axis_max_segments = 0;
         self.replay_axis_num_edges = 0;
-        self.replay_axis_max_edges = 0;
         self.replay_axis_major_dir = 0;
         self.replay_segment_edge_raw.clear();
         self.replay_edge_first_raw.clear();
@@ -207,29 +201,16 @@ impl<'a> RustRecorder<'a> {
             .unwrap_or(0xFFFF)
     }
 
-    fn glyph_ref(&self) -> Option<&ScaledGlyph> {
-        Some(self.glyph)
-    }
-
     fn glyph_num_components(&self) -> u16 {
-        let Some(glyph) = self.glyph_ref() else {
-            return 0;
-        };
-        glyph.num_components()
+        self.glyph.num_components()
     }
 
     fn glyph_pointsums_len(&self) -> u16 {
-        let Some(glyph) = self.glyph_ref() else {
-            return 0;
-        };
-        glyph.pointsums_len()
+        self.glyph.pointsums_len()
     }
 
     fn glyph_pointsum(&self, idx: u16) -> u16 {
-        let Some(glyph) = self.glyph_ref() else {
-            return 0;
-        };
-        glyph.pointsum(idx)
+        self.glyph.pointsum(idx)
     }
 
     fn adjust_point_index(&self, idx: u32, hint_composites: bool) -> u32 {
@@ -726,8 +707,8 @@ struct GlyphSegmentsBytecode {
     num_args: u16,
 }
 
-impl RecorderMarshaledAction {
-    fn init() -> Self {
+impl Default for RecorderMarshaledAction {
+    fn default() -> Self {
         Self {
             edge1_first_idx: 0xFFFF,
             edge2_first_idx: 0xFFFF,
@@ -789,7 +770,7 @@ fn marshal_action_fields(
     const TA_SERIF_LINK1: u32 = 52;
     const TA_SERIF_LINK2: u32 = 59;
 
-    let mut m = RecorderMarshaledAction::init();
+    let mut m = RecorderMarshaledAction::default();
 
     let maybe_bound_first_idx = |edge_idx: u16| -> u16 {
         if edge_idx == 0xFFFF {
@@ -993,14 +974,7 @@ fn hints_recorder_marshal_and_emit_action(
 
     let emitted = emit_marshaled_action_bytes(
         action,
-        m.edge1_first_idx,
-        m.edge2_first_idx,
-        m.edge3_first_idx,
-        m.lower_bound_first_idx,
-        m.upper_bound_first_idx,
-        m.primary_is_round,
-        m.secondary_is_serif,
-        m.cvt_idx,
+        &m,
         top_to_bottom_hinting,
         &segment_indices1,
         &segment_indices2,
@@ -1228,13 +1202,10 @@ fn recorder_record_hints_for_ppem(
         }
 
         if result.did_emit_action {
-            recorder.hints_record_num_actions =
-                match recorder.hints_record_num_actions.checked_add(1) {
-                    Some(v) => v,
-                    None => {
-                        return Err(AutohintError::NullPointer);
-                    }
-                };
+            recorder.hints_record_num_actions = recorder
+                .hints_record_num_actions
+                .checked_add(1)
+                .ok_or(AutohintError::NumericOverflow)?;
         }
     }
 
@@ -1379,9 +1350,7 @@ fn recorder_build_replay_axis_from_plan(
     }
 
     recorder.replay_axis_num_segments = num_segments as u16;
-    recorder.replay_axis_max_segments = u16::try_from(num_segments).unwrap_or(u16::MAX);
     recorder.replay_axis_num_edges = num_edges as u16;
-    recorder.replay_axis_max_edges = u16::try_from(num_edges).unwrap_or(u16::MAX);
     recorder.replay_axis_major_dir = TA_DIR_NONE;
     recorder.set_use_replay_axis(true);
 
@@ -1530,6 +1499,158 @@ fn emit_hints_record_into(out: &mut Bytecode, words_be: &[u8], optimize: bool) -
     Ok(u16::try_from(num_arguments).unwrap_or(u16::MAX))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn append_hints_or_scaler_bytecode(
+    font: &mut Font,
+    glyph_ref: &ScaledGlyph,
+    idx: GlyphId,
+    glyph_num_points: u32,
+    ta_style: StyleIndex,
+    is_non_base: bool,
+    is_digit: bool,
+    bytecode: &mut Bytecode,
+) -> Result<bool, AutohintError> {
+    let mut recorder = RustRecorder::new(glyph_ref);
+    let mut action_hints_records = HintsRecordArray::new();
+    let mut point_hints_records = HintsRecordArray::new();
+
+    for size in font.args.hinting_range_min..=font.args.hinting_range_max {
+        recorder.clear();
+
+        if font.args.debug {
+            log_debug_heading(&format!("size {}", size), '-');
+        }
+
+        recorder_record_hints_for_ppem(
+            &mut recorder,
+            font,
+            idx,
+            glyph_num_points,
+            size as u16,
+            ta_style,
+            is_non_base,
+            is_digit,
+            &[],
+        )?;
+
+        if action_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
+            action_hints_records.push(
+                recorder.hints_record_size as u32,
+                recorder.hints_record_num_actions,
+                recorder.hints_record_buffer.as_slice(),
+            )
+        }
+
+        recorder_reset_hints_record(&mut recorder);
+        recorder_build_point_hints(&mut recorder, font.args.composites)?;
+
+        if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
+            point_hints_records.push(
+                recorder.hints_record_size as u32,
+                recorder.hints_record_num_actions,
+                recorder.hints_record_buffer.as_slice(),
+            )
+        }
+    }
+
+    if action_hints_records.is_empty_singleton() {
+        let (emitted, num_args) =
+            build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
+        bytecode.extend(emitted);
+
+        let num_storage = StorageAreaLocations::sal_segment_offset as u16;
+        let num_stack_elements = ADDITIONAL_STACK_ELEMENTS.saturating_add(num_args as u16);
+        font.final_maxp_data.update_max_storage(num_storage);
+        font.final_maxp_data
+            .update_max_stack_elements(num_stack_elements);
+
+        return Ok(false);
+    }
+
+    let optimize = action_hints_records.len() > 1;
+
+    let pos0 = bytecode.as_slice().len();
+    let (point_bytes, point_stack) = match point_hints_records.emit(optimize) {
+        Ok(v) => v,
+        Err(_) => return Err(AutohintError::NullPointer),
+    };
+    bytecode.extend_bytes(point_bytes.as_slice());
+    if point_stack > recorder.num_stack_elements {
+        recorder.num_stack_elements = point_stack;
+    }
+
+    let saved_stack = recorder.num_stack_elements;
+    recorder.num_stack_elements = 0;
+
+    let pos1 = bytecode.as_slice().len();
+    let (action_bytes, action_stack) = match action_hints_records.emit(optimize) {
+        Ok(v) => v,
+        Err(_) => return Err(AutohintError::NullPointer),
+    };
+    bytecode.extend_bytes(action_bytes.as_slice());
+    if action_stack > recorder.num_stack_elements {
+        recorder.num_stack_elements = action_stack;
+    }
+    recorder.num_stack_elements = recorder.num_stack_elements.saturating_add(saved_stack);
+
+    let mut first_indices = Vec::<u32>::new();
+    let mut last_indices = Vec::<u32>::new();
+    let num_active_segments = recorder.num_active_segments() as usize;
+    if num_active_segments > 0 {
+        if first_indices
+            .try_reserve_exact(num_active_segments)
+            .is_err()
+            || last_indices.try_reserve_exact(num_active_segments).is_err()
+        {
+            return Err(AutohintError::OutOfMemory);
+        }
+        first_indices.resize(num_active_segments, 0);
+        last_indices.resize(num_active_segments, 0);
+
+        if !recorder.fill_active_segment_point_indices(&mut first_indices, &mut last_indices) {
+            return Err(AutohintError::NullPointer);
+        }
+    }
+
+    let style_id = font
+        .glyf_data
+        .as_ref()
+        .and_then(|g| g.style_offsets.get(&ta_style))
+        .map(|d| d.slot)
+        .unwrap_or(0xFFFF);
+    let pos2 = bytecode.as_slice().len();
+    let segment_result = build_glyph_segments_bytecode(
+        &recorder,
+        font,
+        idx,
+        font.args.composites,
+        style_id,
+        &first_indices,
+        &last_indices,
+        recorder.num_wrap_around_segments(),
+        optimize,
+    )?;
+    bytecode.extend(segment_result.bytecode);
+
+    let num_storage = (StorageAreaLocations::sal_segment_offset as u16)
+        .saturating_add(segment_result.num_segments.saturating_mul(3));
+    let num_twilight_points = segment_result.num_segments.saturating_mul(2);
+    let num_stack_elements = ADDITIONAL_STACK_ELEMENTS
+        .saturating_add(recorder.num_stack_elements)
+        .saturating_add(segment_result.num_args);
+    font.final_maxp_data.update_max_storage(num_storage);
+    font.final_maxp_data
+        .update_max_twilight_points(num_twilight_points);
+    font.final_maxp_data
+        .update_max_stack_elements(num_stack_elements);
+
+    if action_hints_records.len() == 1 && point_hints_records.len() <= 1 {
+        let _ = bytecode.optimize_push([pos0, pos1, pos2]);
+    }
+
+    Ok(true)
+}
+
 pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<(), AutohintError> {
     // Bounds check and get sfnt/GlyfData pointers.
     if font.glyf_data.is_none() {
@@ -1560,17 +1681,23 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
     }
 
     let ta_style = StyleIndex::new(gstyle.style_index as usize)?;
-    let mut use_gstyle_data = true;
+    let use_gstyle_data;
 
-    let mut is_composite_glyph = glyph_ref.num_components() != 0;
-    let mut is_empty_glyph = !is_composite_glyph && glyph_ref.num_contours() == 0;
-    let mut glyph_num_points = glyph_ref.num_points() as u32;
-
-    if let Ok(info) = LoaderGlyphInfo::new(font, idx) {
-        is_composite_glyph = info.kind == LoaderGlyphKind::Composite;
-        is_empty_glyph = info.kind == LoaderGlyphKind::Empty;
-        glyph_num_points = info.num_points as u32;
-    }
+    let (is_composite_glyph, is_empty_glyph, glyph_num_points) =
+        if let Ok(info) = LoaderGlyphInfo::new(font, idx) {
+            (
+                info.kind == LoaderGlyphKind::Composite,
+                info.kind == LoaderGlyphKind::Empty,
+                info.num_points as u32,
+            )
+        } else {
+            let is_composite = glyph_ref.num_components() != 0;
+            (
+                is_composite,
+                !is_composite && glyph_ref.num_contours() == 0,
+                glyph_ref.num_points() as u32,
+            )
+        };
 
     if is_empty_glyph {
         return Ok(());
@@ -1605,6 +1732,9 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
 
     let mut bytecode = Bytecode::new();
 
+    let use_fallback_scaler = unstable_variable_plan
+        || (font.args.fallback_scaling && ta_style.as_usize() == fallback_style);
+
     if is_composite_glyph {
         let subglyph = match build_subglyph_shifter_bytecode(font, idx) {
             Ok(v) => v,
@@ -1612,305 +1742,31 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
         };
         bytecode.extend(subglyph);
         use_gstyle_data = false;
-    } else if font.args.fallback_scaling || unstable_variable_plan {
-        if ta_style.as_usize() == fallback_style || unstable_variable_plan {
-            let recorder = RustRecorder::new(&glyph_ref);
-            let (emitted, num_args) =
-                build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
-            bytecode.extend(emitted);
+    } else if use_fallback_scaler {
+        let recorder = RustRecorder::new(&glyph_ref);
+        let (emitted, num_args) =
+            build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
+        bytecode.extend(emitted);
 
-            let num_storage = StorageAreaLocations::sal_segment_offset as u16;
-            font.final_maxp_data.update_max_storage(num_storage);
+        let num_storage = StorageAreaLocations::sal_segment_offset as u16;
+        font.final_maxp_data.update_max_storage(num_storage);
 
-            let num_stack_elements = ADDITIONAL_STACK_ELEMENTS.saturating_add(num_args as u16);
-            font.final_maxp_data
-                .update_max_stack_elements(num_stack_elements);
+        let num_stack_elements = ADDITIONAL_STACK_ELEMENTS.saturating_add(num_args as u16);
+        font.final_maxp_data
+            .update_max_stack_elements(num_stack_elements);
 
-            use_gstyle_data = false;
-        } else {
-            let mut recorder = RustRecorder::new(&glyph_ref);
-            let mut action_hints_records = HintsRecordArray::new();
-            let mut point_hints_records = HintsRecordArray::new();
-
-            for size in font.args.hinting_range_min..=font.args.hinting_range_max {
-                recorder.clear();
-
-                if font.args.debug {
-                    log_debug_heading(&format!("size {}", size), '-');
-                }
-
-                recorder_record_hints_for_ppem(
-                    &mut recorder,
-                    font,
-                    idx,
-                    glyph_num_points,
-                    size as u16,
-                    ta_style,
-                    gstyle.is_non_base,
-                    gstyle.is_digit,
-                    &[],
-                )?;
-
-                if action_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
-                    action_hints_records.push(
-                        recorder.hints_record_size as u32,
-                        recorder.hints_record_num_actions,
-                        recorder.hints_record_buffer.as_slice(),
-                    )
-                }
-
-                recorder_reset_hints_record(&mut recorder);
-                recorder_build_point_hints(&mut recorder, font.args.composites)?;
-
-                if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
-                    point_hints_records.push(
-                        recorder.hints_record_size as u32,
-                        recorder.hints_record_num_actions,
-                        recorder.hints_record_buffer.as_slice(),
-                    )
-                }
-            }
-
-            if action_hints_records.is_empty_singleton() {
-                let (emitted, num_args) =
-                    build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
-                bytecode.extend(emitted);
-
-                let num_storage = StorageAreaLocations::sal_segment_offset as u16;
-                font.final_maxp_data.update_max_storage(num_storage);
-
-                let num_stack_elements = ADDITIONAL_STACK_ELEMENTS.saturating_add(num_args as u16);
-                font.final_maxp_data
-                    .update_max_stack_elements(num_stack_elements);
-
-                use_gstyle_data = false;
-            } else {
-                let optimize = action_hints_records.len() > 1;
-
-                let pos0 = bytecode.as_slice().len();
-                let (point_bytes, point_stack) = match point_hints_records.emit(optimize) {
-                    Ok(v) => v,
-                    Err(_) => return Err(AutohintError::NullPointer),
-                };
-                bytecode.extend_bytes(point_bytes.as_slice());
-                if point_stack > recorder.num_stack_elements {
-                    recorder.num_stack_elements = point_stack;
-                }
-
-                let saved_stack = recorder.num_stack_elements;
-                recorder.num_stack_elements = 0;
-
-                let pos1 = bytecode.as_slice().len();
-                let (action_bytes, action_stack) = match action_hints_records.emit(optimize) {
-                    Ok(v) => v,
-                    Err(_) => return Err(AutohintError::NullPointer),
-                };
-                bytecode.extend_bytes(action_bytes.as_slice());
-                if action_stack > recorder.num_stack_elements {
-                    recorder.num_stack_elements = action_stack;
-                }
-                recorder.num_stack_elements =
-                    recorder.num_stack_elements.saturating_add(saved_stack);
-
-                let mut first_indices = Vec::<u32>::new();
-                let mut last_indices = Vec::<u32>::new();
-                let num_active_segments = recorder.num_active_segments() as usize;
-                if num_active_segments > 0 {
-                    if first_indices
-                        .try_reserve_exact(num_active_segments)
-                        .is_err()
-                        || last_indices.try_reserve_exact(num_active_segments).is_err()
-                    {
-                        return Err(AutohintError::OutOfMemory);
-                    }
-                    first_indices.resize(num_active_segments, 0);
-                    last_indices.resize(num_active_segments, 0);
-
-                    if !recorder
-                        .fill_active_segment_point_indices(&mut first_indices, &mut last_indices)
-                    {
-                        return Err(AutohintError::NullPointer);
-                    }
-                }
-
-                let style_id = font
-                    .glyf_data
-                    .as_ref()
-                    .and_then(|g| g.style_offsets.get(&ta_style))
-                    .map(|d| d.slot)
-                    .unwrap_or(0xFFFF);
-                let pos2 = bytecode.as_slice().len();
-                let segment_result = build_glyph_segments_bytecode(
-                    &recorder,
-                    font,
-                    idx,
-                    font.args.composites,
-                    style_id,
-                    &first_indices,
-                    &last_indices,
-                    recorder.num_wrap_around_segments(),
-                    optimize,
-                )?;
-                bytecode.extend(segment_result.bytecode);
-
-                let num_storage = (StorageAreaLocations::sal_segment_offset as u16)
-                    .saturating_add(segment_result.num_segments.saturating_mul(3));
-                let num_twilight_points = segment_result.num_segments.saturating_mul(2);
-                let num_stack_elements = ADDITIONAL_STACK_ELEMENTS
-                    .saturating_add(recorder.num_stack_elements)
-                    .saturating_add(segment_result.num_args);
-
-                font.final_maxp_data.update_max_storage(num_storage);
-                font.final_maxp_data
-                    .update_max_twilight_points(num_twilight_points);
-                font.final_maxp_data
-                    .update_max_stack_elements(num_stack_elements);
-
-                if action_hints_records.len() == 1 && point_hints_records.len() <= 1 {
-                    let _ = bytecode.optimize_push([pos0, pos1, pos2]);
-                }
-            }
-        }
+        use_gstyle_data = false;
     } else {
-        let mut recorder = RustRecorder::new(&glyph_ref);
-        let mut action_hints_records = HintsRecordArray::new();
-        let mut point_hints_records = HintsRecordArray::new();
-
-        for size in font.args.hinting_range_min..=font.args.hinting_range_max {
-            recorder.clear();
-
-            if font.args.debug {
-                log_debug_heading(&format!("size {}", size), '-');
-            }
-
-            recorder_record_hints_for_ppem(
-                &mut recorder,
-                font,
-                idx,
-                glyph_num_points,
-                size as u16,
-                ta_style,
-                gstyle.is_non_base,
-                gstyle.is_digit,
-                &[],
-            )?;
-
-            if action_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
-                action_hints_records.push(
-                    recorder.hints_record_size as u32,
-                    recorder.hints_record_num_actions,
-                    recorder.hints_record_buffer.as_slice(),
-                )
-            }
-
-            recorder_reset_hints_record(&mut recorder);
-            recorder_build_point_hints(&mut recorder, font.args.composites)?;
-
-            if point_hints_records.is_different(recorder.hints_record_buffer.as_slice()) {
-                point_hints_records.push(
-                    recorder.hints_record_size as u32,
-                    recorder.hints_record_num_actions,
-                    recorder.hints_record_buffer.as_slice(),
-                )
-            }
-        }
-
-        if action_hints_records.is_empty_singleton() {
-            let (emitted, num_args) =
-                build_glyph_scaler_bytecode(&recorder, font, idx, font.args.composites)?;
-            bytecode.extend(emitted);
-
-            let num_storage = StorageAreaLocations::sal_segment_offset as u16;
-            let num_stack_elements = ADDITIONAL_STACK_ELEMENTS.saturating_add(num_args as u16);
-            font.final_maxp_data.update_max_storage(num_storage);
-            font.final_maxp_data
-                .update_max_stack_elements(num_stack_elements);
-
-            use_gstyle_data = false;
-        } else {
-            let optimize = action_hints_records.len() > 1;
-
-            let pos0 = bytecode.as_slice().len();
-            let (point_bytes, point_stack) = match point_hints_records.emit(optimize) {
-                Ok(v) => v,
-                Err(_) => return Err(AutohintError::NullPointer),
-            };
-            bytecode.extend_bytes(point_bytes.as_slice());
-            if point_stack > recorder.num_stack_elements {
-                recorder.num_stack_elements = point_stack;
-            }
-
-            let saved_stack = recorder.num_stack_elements;
-            recorder.num_stack_elements = 0;
-
-            let pos1 = bytecode.as_slice().len();
-            let (action_bytes, action_stack) = match action_hints_records.emit(optimize) {
-                Ok(v) => v,
-                Err(_) => return Err(AutohintError::NullPointer),
-            };
-            bytecode.extend_bytes(action_bytes.as_slice());
-            if action_stack > recorder.num_stack_elements {
-                recorder.num_stack_elements = action_stack;
-            }
-            recorder.num_stack_elements = recorder.num_stack_elements.saturating_add(saved_stack);
-
-            let mut first_indices = Vec::<u32>::new();
-            let mut last_indices = Vec::<u32>::new();
-            let num_active_segments = recorder.num_active_segments() as usize;
-            if num_active_segments > 0 {
-                if first_indices
-                    .try_reserve_exact(num_active_segments)
-                    .is_err()
-                    || last_indices.try_reserve_exact(num_active_segments).is_err()
-                {
-                    return Err(AutohintError::OutOfMemory);
-                }
-                first_indices.resize(num_active_segments, 0);
-                last_indices.resize(num_active_segments, 0);
-
-                if !recorder
-                    .fill_active_segment_point_indices(&mut first_indices, &mut last_indices)
-                {
-                    return Err(AutohintError::NullPointer);
-                }
-            }
-
-            let style_id = font
-                .glyf_data
-                .as_ref()
-                .and_then(|g| g.style_offsets.get(&ta_style))
-                .map(|d| d.slot)
-                .unwrap_or(0xFFFF);
-            let pos2 = bytecode.as_slice().len();
-            let segment_result = build_glyph_segments_bytecode(
-                &recorder,
-                font,
-                idx,
-                font.args.composites,
-                style_id,
-                &first_indices,
-                &last_indices,
-                recorder.num_wrap_around_segments(),
-                optimize,
-            )?;
-            bytecode.extend(segment_result.bytecode);
-
-            let num_storage = (StorageAreaLocations::sal_segment_offset as u16)
-                .saturating_add(segment_result.num_segments.saturating_mul(3));
-            let num_twilight_points = segment_result.num_segments.saturating_mul(2);
-            let num_stack_elements = ADDITIONAL_STACK_ELEMENTS
-                .saturating_add(recorder.num_stack_elements)
-                .saturating_add(segment_result.num_args);
-            font.final_maxp_data.update_max_storage(num_storage);
-            font.final_maxp_data
-                .update_max_twilight_points(num_twilight_points);
-            font.final_maxp_data
-                .update_max_stack_elements(num_stack_elements);
-
-            if action_hints_records.len() == 1 && point_hints_records.len() <= 1 {
-                let _ = bytecode.optimize_push([pos0, pos1, pos2]);
-            }
-        }
+        use_gstyle_data = append_hints_or_scaler_bytecode(
+            font,
+            &glyph_ref,
+            idx,
+            glyph_num_points,
+            ta_style,
+            gstyle.is_non_base,
+            gstyle.is_digit,
+            &mut bytecode,
+        )?;
     }
 
     if font.control.has_index() {
@@ -2216,17 +2072,9 @@ fn build_glyph_segments_bytecode(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn emit_action_header(
     action: u32,
-    edge1_first_idx: u16,
-    edge2_first_idx: u16,
-    edge3_first_idx: u16,
-    lower_bound_idx: u16,
-    upper_bound_idx: u16,
-    primary_is_round: bool,
-    secondary_is_serif: bool,
-    cvt_idx: u16,
+    marshaled: &RecorderMarshaledAction,
     top_to_bottom_hinting: bool,
 ) -> Result<Vec<u8>, AutohintError> {
     // Must match the C TA_Action enum base-variant values (see tahints.h).
@@ -2256,119 +2104,119 @@ fn emit_action_header(
         TA_LINK => {
             let action_byte = (TA_LINK as u8)
                 + ACTION_OFFSET
-                + (secondary_is_serif as u8)
-                + 2 * (primary_is_round as u8);
+                + (marshaled.secondary_is_serif as u8)
+                + 2 * (marshaled.primary_is_round as u8);
             buf.push(action_byte);
-            push_u16(&mut buf, edge1_first_idx);
-            push_u16(&mut buf, edge2_first_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
+            push_u16(&mut buf, marshaled.edge2_first_idx);
         }
 
         TA_ANCHOR => {
             let action_byte = (TA_ANCHOR as u8)
                 + ACTION_OFFSET
-                + (secondary_is_serif as u8)
-                + 2 * (primary_is_round as u8);
+                + (marshaled.secondary_is_serif as u8)
+                + 2 * (marshaled.primary_is_round as u8);
             buf.push(action_byte);
-            push_u16(&mut buf, edge1_first_idx);
-            push_u16(&mut buf, edge2_first_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
+            push_u16(&mut buf, marshaled.edge2_first_idx);
         }
 
         TA_ADJUST => {
-            let has_bound = (edge3_first_idx != 0xFFFF) as u8;
+            let has_bound = (marshaled.edge3_first_idx != 0xFFFF) as u8;
             let bound_and_down = 4 * has_bound + 4 * (has_bound * (top_to_bottom_hinting as u8));
             let action_byte = (TA_ADJUST as u8)
                 + ACTION_OFFSET
-                + (secondary_is_serif as u8)
-                + 2 * (primary_is_round as u8)
+                + (marshaled.secondary_is_serif as u8)
+                + 2 * (marshaled.primary_is_round as u8)
                 + bound_and_down;
             buf.push(action_byte);
-            push_u16(&mut buf, edge1_first_idx);
-            push_u16(&mut buf, edge2_first_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
+            push_u16(&mut buf, marshaled.edge2_first_idx);
             if has_bound != 0 {
-                push_u16(&mut buf, edge3_first_idx);
+                push_u16(&mut buf, marshaled.edge3_first_idx);
             }
         }
 
         TA_BLUE_ANCHOR => {
             buf.push((TA_BLUE_ANCHOR as u8) + ACTION_OFFSET);
-            push_u16(&mut buf, edge2_first_idx);
-            push_u16(&mut buf, cvt_idx);
-            push_u16(&mut buf, edge1_first_idx);
+            push_u16(&mut buf, marshaled.edge2_first_idx);
+            push_u16(&mut buf, marshaled.cvt_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
         }
 
         TA_STEM => {
-            let has_bound = (edge3_first_idx != 0xFFFF) as u8;
+            let has_bound = (marshaled.edge3_first_idx != 0xFFFF) as u8;
             let bound_and_down = 4 * has_bound + 4 * (has_bound * (top_to_bottom_hinting as u8));
             let action_byte = (TA_STEM as u8)
                 + ACTION_OFFSET
-                + (secondary_is_serif as u8)
-                + 2 * (primary_is_round as u8)
+                + (marshaled.secondary_is_serif as u8)
+                + 2 * (marshaled.primary_is_round as u8)
                 + bound_and_down;
             buf.push(action_byte);
-            push_u16(&mut buf, edge1_first_idx);
-            push_u16(&mut buf, edge2_first_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
+            push_u16(&mut buf, marshaled.edge2_first_idx);
             if has_bound != 0 {
-                push_u16(&mut buf, edge3_first_idx);
+                push_u16(&mut buf, marshaled.edge3_first_idx);
             }
         }
 
         TA_BLUE => {
             buf.push((TA_BLUE as u8) + ACTION_OFFSET);
-            push_u16(&mut buf, cvt_idx);
-            push_u16(&mut buf, edge1_first_idx);
+            push_u16(&mut buf, marshaled.cvt_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
         }
 
         TA_SERIF => {
-            let has_lower = (lower_bound_idx != 0xFFFF) as u8;
-            let has_upper = (upper_bound_idx != 0xFFFF) as u8;
+            let has_lower = (marshaled.lower_bound_first_idx != 0xFFFF) as u8;
+            let has_upper = (marshaled.upper_bound_first_idx != 0xFFFF) as u8;
             let bound_and_down = has_lower
                 + 2 * has_upper
                 + 3 * ((has_lower | has_upper) * (top_to_bottom_hinting as u8));
             let action_byte = (TA_SERIF as u8) + ACTION_OFFSET + bound_and_down;
             buf.push(action_byte);
-            push_u16(&mut buf, edge1_first_idx);
-            push_u16(&mut buf, edge2_first_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
+            push_u16(&mut buf, marshaled.edge2_first_idx);
             if has_lower != 0 {
-                push_u16(&mut buf, lower_bound_idx);
+                push_u16(&mut buf, marshaled.lower_bound_first_idx);
             }
             if has_upper != 0 {
-                push_u16(&mut buf, upper_bound_idx);
+                push_u16(&mut buf, marshaled.upper_bound_first_idx);
             }
         }
 
         TA_SERIF_ANCHOR | TA_SERIF_LINK2 => {
-            let has_lower = (lower_bound_idx != 0xFFFF) as u8;
-            let has_upper = (upper_bound_idx != 0xFFFF) as u8;
+            let has_lower = (marshaled.lower_bound_first_idx != 0xFFFF) as u8;
+            let has_upper = (marshaled.upper_bound_first_idx != 0xFFFF) as u8;
             let bound_and_down = has_lower
                 + 2 * has_upper
                 + 3 * ((has_lower | has_upper) * (top_to_bottom_hinting as u8));
             let action_byte = (action as u8) + ACTION_OFFSET + bound_and_down;
             buf.push(action_byte);
-            push_u16(&mut buf, edge1_first_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
             if has_lower != 0 {
-                push_u16(&mut buf, lower_bound_idx);
+                push_u16(&mut buf, marshaled.lower_bound_first_idx);
             }
             if has_upper != 0 {
-                push_u16(&mut buf, upper_bound_idx);
+                push_u16(&mut buf, marshaled.upper_bound_first_idx);
             }
         }
 
         TA_SERIF_LINK1 => {
-            let has_lower = (lower_bound_idx != 0xFFFF) as u8;
-            let has_upper = (upper_bound_idx != 0xFFFF) as u8;
+            let has_lower = (marshaled.lower_bound_first_idx != 0xFFFF) as u8;
+            let has_upper = (marshaled.upper_bound_first_idx != 0xFFFF) as u8;
             let bound_and_down = has_lower
                 + 2 * has_upper
                 + 3 * ((has_lower | has_upper) * (top_to_bottom_hinting as u8));
             let action_byte = (TA_SERIF_LINK1 as u8) + ACTION_OFFSET + bound_and_down;
             buf.push(action_byte);
-            push_u16(&mut buf, edge1_first_idx);
-            push_u16(&mut buf, edge2_first_idx);
-            push_u16(&mut buf, edge3_first_idx);
+            push_u16(&mut buf, marshaled.edge1_first_idx);
+            push_u16(&mut buf, marshaled.edge2_first_idx);
+            push_u16(&mut buf, marshaled.edge3_first_idx);
             if has_lower != 0 {
-                push_u16(&mut buf, lower_bound_idx);
+                push_u16(&mut buf, marshaled.lower_bound_first_idx);
             }
             if has_upper != 0 {
-                push_u16(&mut buf, upper_bound_idx);
+                push_u16(&mut buf, marshaled.upper_bound_first_idx);
             }
         }
 
@@ -2441,35 +2289,16 @@ fn emit_segments_payload(
     Ok(buf)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn emit_marshaled_action_bytes(
     action: u32,
-    edge1_first_idx: u16,
-    edge2_first_idx: u16,
-    edge3_first_idx: u16,
-    lower_bound_idx: u16,
-    upper_bound_idx: u16,
-    primary_is_round: bool,
-    secondary_is_serif: bool,
-    cvt_idx: u16,
+    marshaled: &RecorderMarshaledAction,
     top_to_bottom_hinting: bool,
     segment_indices1: &[u16],
     segment_indices2: &[u16],
     wrap_around_segments: &[u16],
     num_segments: u16,
 ) -> Result<Vec<u8>, AutohintError> {
-    let header = emit_action_header(
-        action,
-        edge1_first_idx,
-        edge2_first_idx,
-        edge3_first_idx,
-        lower_bound_idx,
-        upper_bound_idx,
-        primary_is_round,
-        secondary_is_serif,
-        cvt_idx,
-        top_to_bottom_hinting,
-    )?;
+    let header = emit_action_header(action, marshaled, top_to_bottom_hinting)?;
 
     let seg1 = if segment_indices1.is_empty() {
         Vec::new()
