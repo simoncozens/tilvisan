@@ -367,7 +367,10 @@ pub(crate) fn build_cvar_table(font: &mut Font) -> Result<(), AutohintError> {
     Ok(())
 }
 
-fn glyph_variations(font: &Font, gid: GlyphId) -> Result<Vec<Vec<F2Dot14>>, AutohintError> {
+pub(crate) fn glyph_variations(
+    font: &Font,
+    gid: GlyphId,
+) -> Result<Vec<Vec<F2Dot14>>, AutohintError> {
     let Some(gvd) = font.fontref.gvar()?.glyph_variation_data(gid)? else {
         return Ok(vec![]);
     };

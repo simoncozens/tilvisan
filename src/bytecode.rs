@@ -182,7 +182,10 @@ impl Bytecode {
         let d0_end = pos[0] + 2 + size0;
         let d1_end = p1 + 2 + size1;
         let d2_end = p2.map(|p| p + 2 + size2).unwrap_or(0);
-        if d0_end > self.0.len() || d1_end > self.0.len() || p2.is_some_and(|_| d2_end > self.0.len()) {
+        if d0_end > self.0.len()
+            || d1_end > self.0.len()
+            || p2.is_some_and(|_| d2_end > self.0.len())
+        {
             return false;
         }
 
