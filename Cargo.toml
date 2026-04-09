@@ -8,7 +8,7 @@ name = "tilvisan"
 path = "src/main.rs"
 
 [dependencies]
-write-fonts = { version = "0.46.0", git = "https://github.com/googlefonts/fontations", branch = "autohint-needs", features = [
+write-fonts = { version = "0.47.0", git = "https://github.com/googlefonts/fontations", branch = "autohint-needs", features = [
     "read",
 ] }
 chrono = "0.4.44"
@@ -17,15 +17,12 @@ libc = "0.2"
 log = "0.4"
 logos = "0.14"
 paste = "1.0.15"
-skrifa = { version = "0.41.0", git = "https://github.com/googlefonts/fontations", branch = "autohint-needs", features = [
+skrifa = { version = "0.42.0", git = "https://github.com/googlefonts/fontations", branch = "autohint-needs",  features = [
     "autohinter",
 ] }
 thiserror = "2.0.18"
 env_logger = "0.11.10"
 indexmap = "2.13.1"
-[build-dependencies]
-pkg-config = "0.3"
-cbindgen = "0.27"
 
 [dev-dependencies]
 glob = "0.3.3"
