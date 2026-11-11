@@ -138,7 +138,7 @@ jobs:
           target: ${{ matrix.os.target }}
           cache-key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
       - name: Build
-        run: cargo build --verbose --release --target ${{ matrix.os.target }}
+        run: cargo build --verbose --release --features cli --bin --target ${{ matrix.os.target }}
       - name: Decide on our version name (tag or "dev")
         id: version
         shell: bash
