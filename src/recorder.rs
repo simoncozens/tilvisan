@@ -5,10 +5,13 @@ use skrifa::{
     GlyphId,
 };
 
+#[cfg(feature = "control")]
+use crate::control::CONTROL_DELTA_PPEM_MIN;
+#[cfg(feature = "control")]
+use crate::control_index::ControlIndex;
+
 use crate::{
     bytecode::Bytecode,
-    control::CONTROL_DELTA_PPEM_MIN,
-    control_index::ControlIndex,
     font::Font,
     glyf::{extract_unscaled_outline, Action, ExportedHintPlan, ExportedHintRecord, ScaledGlyph},
     loader::{build_subglyph_shifter_bytecode, LoaderGlyphInfo, LoaderGlyphKind},
@@ -1884,6 +1887,7 @@ pub(crate) fn build_glyph_instructions(font: &mut Font, idx: GlyphId) -> Result<
         )?;
     }
 
+    #[cfg(feature = "control")]
     if font.control.has_index() {
         let (emitted, max_stack) =
             build_delta_exceptions(font.control.index(), idx, &mut glyph_ref);
@@ -2426,6 +2430,7 @@ fn emit_marshaled_action_bytes(
     Ok(combined)
 }
 
+#[cfg(feature = "control")]
 fn build_delta_exception_into(
     ppem: i32,
     point_idx: i32,
@@ -2469,6 +2474,7 @@ fn build_delta_exception_into(
     }
 }
 
+#[cfg(feature = "control")]
 pub(crate) fn build_delta_exceptions(
     index: Option<&ControlIndex>,
     glyph_idx: GlyphId,

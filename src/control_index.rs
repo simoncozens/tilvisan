@@ -3,6 +3,7 @@ use skrifa::{outline::autohint::GlyphStyle, GlyphId};
 use crate::{font::Font, intset::IntSet, AutohintError};
 use std::collections::{BTreeMap, HashMap};
 
+#[cfg_attr(not(feature = "control"), allow(dead_code))]
 #[derive(Debug, Clone)]
 pub(crate) enum ResolvedControlEntry {
     Delta {
@@ -32,6 +33,7 @@ pub(crate) enum ResolvedControlEntry {
     StemWidthAdjust,
 }
 
+#[cfg_attr(not(feature = "control"), allow(dead_code))]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct DeltaRule {
     pub(crate) before_iup: u8,
@@ -148,6 +150,7 @@ impl ControlIndex {
     }
 }
 
+#[cfg(feature = "control")]
 pub(crate) fn delta_rules_for_glyph(index: &ControlIndex, glyph_idx: GlyphId) -> Vec<DeltaRule> {
     index
         .delta_rules

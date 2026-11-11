@@ -11,10 +11,9 @@ use write_fonts::{
     types::Version16Dot16,
 };
 
-use crate::{
-    args::Args, control_index::ControlState, glyf::GlyfData, style::StyleIndex, AutohintError,
-    InfoData,
-};
+use crate::control_index::ControlState;
+
+use crate::{args::Args, glyf::GlyfData, style::StyleIndex, AutohintError, InfoData};
 use std::collections::HashSet;
 
 pub(crate) const TA_PROP_INCREASE_X_HEIGHT_MIN: i32 = 6;

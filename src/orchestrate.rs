@@ -1,14 +1,17 @@
 use skrifa::{outline::autohint::GlyphStyle, Tag};
 
+#[cfg(feature = "control")]
+use crate::control::parse_control_entries;
 use crate::{
-    control::{parse_control_entries, NumberSetAst, NumberSetElem},
     control_index::ResolvedControlEntry,
     font::Font,
     info::InfoData,
     intset::{IntSet, RangeExpr},
+    numberset::{NumberSetAst, NumberSetElem},
     prep::build_prep_table,
     Args, AutohintError,
 };
+
 use std::io::{self, Read};
 
 pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
@@ -24,11 +27,15 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
     };
 
     // Read control file if provided
+    #[cfg(feature = "control")]
     let control_buf: Option<String> = args
         .control_file
         .as_ref()
         .map(std::fs::read_to_string)
         .transpose()?;
+    #[cfg(not(feature = "control"))]
+    #[cfg_attr(not(feature = "control"), expect(unused_variables))]
+    let control_buf: Option<String> = None;
 
     // Read reference file if provided
     let reference_buf: Option<Vec<u8>> = args.reference.as_ref().map(std::fs::read).transpose()?;
@@ -54,6 +61,7 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
         .unwrap_or_else(|e| panic!("Failed to construct info data for {input_file:?}: {e}"));
 
     // Parse control entries
+    #[cfg(feature = "control")]
     let control_entries: Vec<ResolvedControlEntry> = if let Some(control_text) = &control_buf {
         match crate::control::SkrifaProvider::new(in_buf.to_vec()) {
             Ok(provider) => parse_control_entries(control_text, &provider)?,
@@ -65,6 +73,8 @@ pub fn autohint(args: &Args) -> Result<Vec<u8>, AutohintError> {
     } else {
         Vec::new()
     };
+    #[cfg(not(feature = "control"))]
+    let control_entries: Vec<ResolvedControlEntry> = Vec::new();
 
     // Create and initialize Font
     let fontref = skrifa::FontRef::new(&in_buf)?;

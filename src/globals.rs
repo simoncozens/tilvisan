@@ -14,6 +14,7 @@ use skrifa::{
 };
 
 /// Helper to convert a tag string to a 4-byte array, padding with spaces if needed.
+#[cfg(feature = "control")]
 fn string_to_tag_bytes(s: &str) -> Option<[u8; 4]> {
     let bytes = s.as_bytes();
     if bytes.len() > 4 {
@@ -26,6 +27,7 @@ fn string_to_tag_bytes(s: &str) -> Option<[u8; 4]> {
 
 /// Resolve a script/feature pair to a Skrifa style index.
 /// Returns the index of the first matching style in STYLE_CLASSES, or None if not found.
+#[cfg(feature = "control")]
 pub(crate) fn resolve_script_feature_to_style_index(script: &str, feature: &str) -> Option<usize> {
     use skrifa::Tag;
 

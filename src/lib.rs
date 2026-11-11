@@ -1,5 +1,6 @@
 mod args;
 mod bytecode;
+#[cfg(feature = "control")]
 mod control;
 mod control_index;
 mod cvt;
@@ -16,6 +17,7 @@ mod intset;
 mod loader;
 mod maxp;
 mod name;
+mod numberset;
 mod opcodes;
 mod orchestrate;
 mod prep;

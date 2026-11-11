@@ -1,4 +1,4 @@
-use crate::{control::NumberSetAst, AutohintError};
+use crate::{numberset::NumberSetAst, AutohintError};
 use std::collections::BTreeMap;
 
 #[derive(Default, Debug, Clone)]
@@ -65,6 +65,7 @@ pub fn build_version_string(idata: &mut InfoData, args: &crate::args::Args) -> i
     d.push_str(&format!(" -D {}", args.default_script));
     d.push_str(&format!(" -f {}", args.fallback_script));
 
+    #[cfg(feature = "control")]
     if let Some(control_name) = &args.control_file {
         let bn = std::path::Path::new(control_name)
             .file_name()

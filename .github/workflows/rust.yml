@@ -19,6 +19,18 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: library, default features
+            args: --lib
+          - name: library, no default features
+            args: --no-default-features --lib
+          - name: binary, cli feature
+            args: --features cli --bin tilvisan
+          - name: binary, cli without control
+            args: --no-default-features --features cli --bin tilvisan
 
     steps:
       - uses: actions/checkout@v4
@@ -26,8 +38,8 @@ jobs:
           submodules: recursive
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@stable
-      - name: Build
-        run: cargo build
+      - name: Build (${{ matrix.name }})
+        run: cargo build ${{ matrix.args }}
 
   formatting:
     runs-on: ubuntu-latest
@@ -45,6 +57,18 @@ jobs:
         run: cargo fmt --all -- --check
   lint:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: library, default features
+            args: --lib
+          - name: library, no default features
+            args: --no-default-features --lib
+          - name: binary, cli feature
+            args: --features cli --bin tilvisan
+          - name: binary, cli without control
+            args: --no-default-features --features cli --bin tilvisan
 
     steps:
       - uses: actions/checkout@v4
@@ -54,8 +78,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - name: Lint for warnings
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Lint for warnings (${{ matrix.name }})
+        run: cargo clippy ${{ matrix.args }} -- -D warnings
 
   check-for-release:
     name: Create release if needed

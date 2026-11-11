@@ -1,7 +1,5 @@
 use std::fmt::Write;
 
-extern crate libc;
-
 use crate::{
     bytecode::Bytecode,
     error::AutohintError,
