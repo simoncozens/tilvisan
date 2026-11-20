@@ -412,7 +412,11 @@ fn iterate_composite(
 
         match &glyph.glyf {
             WriteGlyph::Composite(cg) => {
-                let sub: Vec<u16> = cg.components().iter().map(|c| c.glyph.to_u16()).collect();
+                let sub: Vec<u16> = cg
+                    .components()
+                    .iter()
+                    .map(|c| c.glyph.to_u32() as u16)
+                    .collect();
                 iterate_composite(
                     glyphs,
                     &sub,
@@ -453,7 +457,10 @@ fn compute_composite_pointsums(
         }
 
         let components: Vec<u16> = if let WriteGlyph::Composite(cg) = &glyphs[i].glyf {
-            cg.components().iter().map(|c| c.glyph.to_u16()).collect()
+            cg.components()
+                .iter()
+                .map(|c| c.glyph.to_u32() as u16)
+                .collect()
         } else {
             vec![]
         };

@@ -162,7 +162,7 @@ pub(crate) fn compute_style_coverage(
         };
 
         for component in composite.components() {
-            let cidx = component.glyph.to_u16() as usize;
+            let cidx = component.glyph.to_u32() as usize;
             if cidx >= glyph_styles_out.len() {
                 continue;
             }

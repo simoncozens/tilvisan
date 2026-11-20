@@ -2,14 +2,26 @@ use skrifa::Tag;
 use write_fonts::{
     tables::{
         glyf::Glyph,
-        gpos::{AnchorTable, PositionLookup},
+        gpos::{
+            AnchorTable, BaseRecord, BaseRecord2, ComponentRecord, ComponentRecord2, CursivePos,
+            CursivePosFormat1, CursivePosFormat2, EntryExitRecord, EntryExitRecord2,
+            LigatureAttach, LigatureAttach2, Mark2Record, Mark2Record2, MarkBasePos,
+            MarkBasePosFormat1, MarkBasePosFormat2, MarkLigPos, MarkLigPosFormat1,
+            MarkLigPosFormat2, MarkMarkPos, MarkMarkPosFormat1, MarkMarkPosFormat2, MarkRecord,
+            MarkRecord2, PositionLookup,
+        },
+        layout::CoverageTable,
     },
-    NullableOffsetMarker,
+    NullableOffsetMarker, OffsetMarker,
 };
 
 use crate::{font::Font, glyf::ScaledGlyph, AutohintError};
 
-fn update_anchor(anchor: &mut AnchorTable, glyph: Option<&ScaledGlyph>) {
+/// A glyph referenced from a coverage table, or `None` if the coverage
+/// contains a glyph ID outside the glyph order.
+type GlyphRef<'a> = Option<&'a ScaledGlyph>;
+
+fn update_anchor(anchor: &mut AnchorTable, glyph: GlyphRef<'_>) {
     let Some(ScaledGlyph {
         glyf: Glyph::Composite(_),
         pointsums,
@@ -33,12 +45,149 @@ fn update_anchor(anchor: &mut AnchorTable, glyph: Option<&ScaledGlyph>) {
     }
 }
 
-fn update_nullable_anchor(
-    anchor: &mut NullableOffsetMarker<AnchorTable>,
-    glyph: Option<&ScaledGlyph>,
+/// A type which owns anchors that may need adjusting for a given glyph.
+///
+/// The 16-bit and 24-bit variants of the GPOS subtables are distinct types
+/// which differ only in their offset widths, so this trait is implemented for
+/// both variants of everything below the subtable level.
+trait UpdateAnchors {
+    fn update_anchors(&mut self, glyph: GlyphRef<'_>);
+}
+
+impl UpdateAnchors for AnchorTable {
+    fn update_anchors(&mut self, glyph: GlyphRef<'_>) {
+        update_anchor(self, glyph);
+    }
+}
+
+impl<T: UpdateAnchors, const N: usize> UpdateAnchors for OffsetMarker<T, N> {
+    fn update_anchors(&mut self, glyph: GlyphRef<'_>) {
+        (**self).update_anchors(glyph);
+    }
+}
+
+impl<T: UpdateAnchors, const N: usize> UpdateAnchors for NullableOffsetMarker<T, N> {
+    fn update_anchors(&mut self, glyph: GlyphRef<'_>) {
+        if let Some(anchor) = self.as_mut() {
+            anchor.update_anchors(glyph);
+        }
+    }
+}
+
+impl<T: UpdateAnchors> UpdateAnchors for Vec<T> {
+    fn update_anchors(&mut self, glyph: GlyphRef<'_>) {
+        for item in self.iter_mut() {
+            item.update_anchors(glyph);
+        }
+    }
+}
+
+/// Implements `UpdateAnchors` for the records below a subtable, given the
+/// fields which hold their anchors. Each record type is listed twice, once for
+/// each offset width.
+macro_rules! impl_update_anchors {
+    ($($ty:ty { $($field:ident),+ $(,)? })*) => {
+        $(impl UpdateAnchors for $ty {
+            fn update_anchors(&mut self, glyph: GlyphRef<'_>) {
+                $(self.$field.update_anchors(glyph);)+
+            }
+        })*
+    };
+}
+
+impl_update_anchors! {
+    EntryExitRecord { entry_anchor, exit_anchor }
+    EntryExitRecord2 { entry_anchor, exit_anchor }
+    MarkRecord { mark_anchor }
+    MarkRecord2 { mark_anchor }
+    BaseRecord { base_anchors }
+    BaseRecord2 { base_anchors }
+    Mark2Record { mark2_anchors }
+    Mark2Record2 { mark2_anchors }
+    ComponentRecord { ligature_anchors }
+    ComponentRecord2 { ligature_anchors }
+    LigatureAttach { component_records }
+    LigatureAttach2 { component_records }
+}
+
+/// Updates the anchors of every record in `records`, matching records to
+/// glyphs via their position in `coverage`.
+fn update_covered<T: UpdateAnchors>(
+    records: &mut [T],
+    coverage: &CoverageTable,
+    glyphs: &[ScaledGlyph],
 ) {
-    if let Some(anchor) = anchor.as_mut() {
-        update_anchor(anchor, glyph);
+    let covered_glyphs = coverage
+        .iter()
+        .map(|glyph_id| glyphs.get(glyph_id.to_u32() as usize));
+    for (record, glyph) in records.iter_mut().zip(covered_glyphs) {
+        record.update_anchors(glyph);
+    }
+}
+
+/// A GPOS positioning subtable whose anchor point numbers may need adjusting.
+trait UpdateSubtable {
+    fn update(&mut self, glyphs: &[ScaledGlyph]);
+}
+
+/// Implements `UpdateSubtable` for both offset-width variants of a subtable,
+/// which have the same fields, and for the enum which wraps them.
+///
+/// Each `coverage => records` pair names a coverage table in the subtable and
+/// the array of records indexed by it.
+macro_rules! impl_update_subtable {
+    (
+        $enum:ident, $format1:ident, $format2:ident;
+        $($coverage:ident => $($records:ident).+);+ $(;)?
+    ) => {
+        impl UpdateSubtable for $enum {
+            fn update(&mut self, glyphs: &[ScaledGlyph]) {
+                match self {
+                    Self::Format1(subtable) => subtable.update(glyphs),
+                    Self::Format2(subtable) => subtable.update(glyphs),
+                }
+            }
+        }
+
+        impl_update_subtable!(@format $format1; $($coverage => $($records).+);+);
+        impl_update_subtable!(@format $format2; $($coverage => $($records).+);+);
+    };
+
+    (@format $format:ident; $($coverage:ident => $($records:ident).+);+) => {
+        impl UpdateSubtable for $format {
+            fn update(&mut self, glyphs: &[ScaledGlyph]) {
+                $(update_covered(&mut self.$($records).+, &self.$coverage, glyphs);)+
+            }
+        }
+    };
+}
+
+impl_update_subtable! {
+    CursivePos, CursivePosFormat1, CursivePosFormat2;
+    coverage => entry_exit_record;
+}
+
+impl_update_subtable! {
+    MarkBasePos, MarkBasePosFormat1, MarkBasePosFormat2;
+    mark_coverage => mark_array.mark_records;
+    base_coverage => base_array.base_records;
+}
+
+impl_update_subtable! {
+    MarkLigPos, MarkLigPosFormat1, MarkLigPosFormat2;
+    ligature_coverage => ligature_array.ligature_attaches;
+    mark_coverage => mark_array.mark_records;
+}
+
+impl_update_subtable! {
+    MarkMarkPos, MarkMarkPosFormat1, MarkMarkPosFormat2;
+    mark1_coverage => mark1_array.mark_records;
+    mark2_coverage => mark2_array.mark2_records;
+}
+
+fn update_subtables<T: UpdateSubtable>(subtables: &mut [OffsetMarker<T>], glyphs: &[ScaledGlyph]) {
+    for subtable in subtables {
+        subtable.update(glyphs);
     }
 }
 
@@ -54,126 +203,19 @@ pub(crate) fn update_gpos(font: &mut Font) -> Result<(), AutohintError> {
         return Ok(());
     };
 
-    for lookup in write_table.lookup_list.lookups.iter_mut() {
+    for lookup in write_table
+        .lookup_list
+        .as_mut()
+        .map(|x| x.lookups.iter_mut())
+        .into_iter()
+        .flatten()
+    {
         match &mut **lookup {
-            PositionLookup::Single(_) => {}
-            PositionLookup::Pair(_) => {}
-            PositionLookup::Cursive(lookup) => {
-                for subtable in lookup.subtables.iter_mut() {
-                    let coverage = subtable
-                        .coverage
-                        .iter()
-                        .map(|x| glyphs.get(x.to_u32() as usize))
-                        .collect::<Vec<_>>();
-                    for (entry_exit, glyph) in subtable.entry_exit_record.iter_mut().zip(coverage) {
-                        update_nullable_anchor(&mut entry_exit.entry_anchor, glyph);
-                        update_nullable_anchor(&mut entry_exit.exit_anchor, glyph);
-                    }
-                }
-            }
-            PositionLookup::MarkToBase(lookup) => {
-                for subtable in lookup.subtables.iter_mut() {
-                    let mark_coverage = subtable
-                        .mark_coverage
-                        .iter()
-                        .map(|x| glyphs.get(x.to_u32() as usize))
-                        .collect::<Vec<_>>();
-                    for (mark_record, glyph) in subtable
-                        .mark_array
-                        .mark_records
-                        .iter_mut()
-                        .zip(mark_coverage)
-                    {
-                        update_anchor(&mut mark_record.mark_anchor, glyph);
-                    }
-
-                    let base_coverage = subtable
-                        .base_coverage
-                        .iter()
-                        .map(|x| glyphs.get(x.to_u32() as usize))
-                        .collect::<Vec<_>>();
-                    for (base_record, glyph) in subtable
-                        .base_array
-                        .base_records
-                        .iter_mut()
-                        .zip(base_coverage)
-                    {
-                        for anchor in base_record.base_anchors.iter_mut() {
-                            update_nullable_anchor(anchor, glyph);
-                        }
-                    }
-                }
-            }
-            PositionLookup::MarkToLig(lookup) => {
-                for subtable in lookup.subtables.iter_mut() {
-                    let coverage = subtable
-                        .ligature_coverage
-                        .iter()
-                        .map(|x| glyphs.get(x.to_u32() as usize))
-                        .collect::<Vec<_>>();
-                    for (lig_record, glyph) in subtable
-                        .ligature_array
-                        .ligature_attaches
-                        .iter_mut()
-                        .zip(coverage)
-                    {
-                        for comp in lig_record.component_records.iter_mut() {
-                            for anchor in comp.ligature_anchors.iter_mut() {
-                                update_nullable_anchor(anchor, glyph);
-                            }
-                        }
-                    }
-                    let mark_coverage = subtable
-                        .mark_coverage
-                        .iter()
-                        .map(|x| glyphs.get(x.to_u32() as usize))
-                        .collect::<Vec<_>>();
-                    for (mark_record, glyph) in subtable
-                        .mark_array
-                        .mark_records
-                        .iter_mut()
-                        .zip(mark_coverage)
-                    {
-                        update_anchor(&mut mark_record.mark_anchor, glyph);
-                    }
-                }
-            }
-            PositionLookup::MarkToMark(lookup) => {
-                for subtable in lookup.subtables.iter_mut() {
-                    let mark1_coverage = subtable
-                        .mark1_coverage
-                        .iter()
-                        .map(|x| glyphs.get(x.to_u32() as usize))
-                        .collect::<Vec<_>>();
-                    for (mark1_record, glyph) in subtable
-                        .mark1_array
-                        .mark_records
-                        .iter_mut()
-                        .zip(mark1_coverage)
-                    {
-                        update_anchor(&mut mark1_record.mark_anchor, glyph);
-                    }
-
-                    let mark2_coverage = subtable
-                        .mark2_coverage
-                        .iter()
-                        .map(|x| glyphs.get(x.to_u32() as usize))
-                        .collect::<Vec<_>>();
-                    for (mark2_record, glyph) in subtable
-                        .mark2_array
-                        .mark2_records
-                        .iter_mut()
-                        .zip(mark2_coverage)
-                    {
-                        for anchor in mark2_record.mark2_anchors.iter_mut() {
-                            update_nullable_anchor(anchor, glyph);
-                        }
-                    }
-                }
-            }
-            PositionLookup::Contextual(_) => {}
-            PositionLookup::ChainContextual(_) => {}
-            PositionLookup::Extension(_) => {}
+            PositionLookup::Cursive(lookup) => update_subtables(&mut lookup.subtables, glyphs),
+            PositionLookup::MarkToBase(lookup) => update_subtables(&mut lookup.subtables, glyphs),
+            PositionLookup::MarkToLig(lookup) => update_subtables(&mut lookup.subtables, glyphs),
+            PositionLookup::MarkToMark(lookup) => update_subtables(&mut lookup.subtables, glyphs),
+            _ => {}
         }
     }
 
