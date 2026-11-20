@@ -42,7 +42,7 @@ fn glyph_totals(
             }
             Some(Glyph::Composite(g)) => {
                 for component in g.components() {
-                    stack.push(component.glyph.into());
+                    stack.push(component.glyph);
                 }
             }
         }
@@ -112,7 +112,7 @@ pub(crate) fn build_subglyph_shifter_bytecode(
             skrifa::raw::tables::glyf::Anchor::Offset { y, .. } => y as i32,
             skrifa::raw::tables::glyf::Anchor::Point { component, .. } => component as i16 as i32,
         };
-        let num_contours = glyph_totals(font, component.glyph.into())?.1;
+        let num_contours = glyph_totals(font, component.glyph)?.1;
 
         if !flags.intersects(CompositeGlyphFlags::ARGS_ARE_XY_VALUES)
             || y_offset == 0
